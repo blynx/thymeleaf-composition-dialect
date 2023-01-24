@@ -1,0 +1,11 @@
+<div th:fragment="card" class="card">
+  <header class="card-header" th:if="${card.hasSlot('header')}">
+    <c:slot c:name="header" />
+  </header>
+  <div class="card-content">
+    <c:slot />
+  </div>
+  <footer class="card-footer" th:if="${card.hasSlot('footer')}">
+    <c:slot c:name="footer" />
+  </footer>
+</div>
