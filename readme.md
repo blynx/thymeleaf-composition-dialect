@@ -1,3 +1,7 @@
+![AI generated illustration "Space and Thyme"](docs/space-and-thyme.jpg "Space And Thyme")
+
+_"An ikebana composition of just space and thyme"_ ([midjourney](https://www.midjourney.com/))
+
 # Thymeleaf Composition Dialect
 
 A flavour of ui component templating in Thymeleaf.
@@ -150,8 +154,6 @@ resources
     └ components    -- configured CompositionDialect path 
        └ forms      -- path on a component class
 ```
-
-To be able to use a template which may be located at `/templates/`
 
 #### Defining Component Templates
 
