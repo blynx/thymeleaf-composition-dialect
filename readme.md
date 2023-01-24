@@ -1,6 +1,6 @@
 ![AI generated illustration "Space and Thyme"](docs/space-and-thyme.jpg "Space And Thyme")
 
-_"An ikebana composition_ 
+_"An ikebana composition_  
 _of just space and thyme"_ 
 ([midjourney ai](https://www.midjourney.com/))
 
