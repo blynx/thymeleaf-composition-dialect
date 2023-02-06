@@ -11,7 +11,6 @@ import org.thymeleaf.model.IOpenElementTag
 import org.thymeleaf.model.ICloseElementTag
 import org.thymeleaf.processor.element.AbstractElementModelProcessor
 import org.thymeleaf.processor.element.IElementModelStructureHandler
-import org.thymeleaf.standard.expression.Fragment
 import org.thymeleaf.standard.expression.StandardExpressions
 import org.thymeleaf.standard.expression.IStandardExpressionParser
 import org.thymeleaf.standard.processor.StandardReplaceTagProcessor
@@ -33,7 +32,7 @@ class CompositionElementModelProcessor(
 
     override fun doProcess(context: ITemplateContext, tag: IModel, structureHandler: IElementModelStructureHandler) {
         val expressionParser = StandardExpressions.getExpressionParser(context.configuration)
-        val fragmentModel = loadFragmentModel(context, expressionParser)
+        val fragmentModel = loadFragmentModel(context)
 
         val slots = extractSlots(tag)
         val newModel = prepareModel(context, fragmentModel, slots)
@@ -49,14 +48,9 @@ class CompositionElementModelProcessor(
 
 
 
-    private fun loadFragmentModel(context: ITemplateContext, expressionParser: IStandardExpressionParser): TemplateModel {
-        // Feels hacky to use the fragment expression like that.
-        val expression = "~{$componentPath :: $elementName}"
-
+    private fun loadFragmentModel(context: ITemplateContext): TemplateModel {
         try {
-            val fragmentExpression = expressionParser.parseExpression(context, expression)
-            val fragment = fragmentExpression.execute(context) as Fragment
-            return fragment.templateModel
+            return context.configuration.templateManager.parseStandalone(context, componentPath, null, null, true, true)
         } catch (e: Exception) {
             throw TemplateProcessingException("${CompositionDialect.DIALECT_NAME}: Could not load template for component \"$elementName\" from \"$componentPath.html\" (relative to thymeleaf templates path)")
         }
