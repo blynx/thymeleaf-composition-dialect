@@ -7,7 +7,7 @@ class Badge(context: CompositionComponentContext) : CompositionComponent(context
     var type: String?
 
     init {
-        this.type = context.attributes["type"].toString()
+        this.type = context.attributes["type"]?.toString()
     }
 
     public fun classNames(): String {

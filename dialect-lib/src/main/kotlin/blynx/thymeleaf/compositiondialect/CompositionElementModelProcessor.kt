@@ -4,6 +4,7 @@ import org.thymeleaf.context.ITemplateContext
 import org.thymeleaf.engine.TemplateModel
 import org.thymeleaf.exceptions.TemplateProcessingException
 import org.thymeleaf.model.IModel
+import org.thymeleaf.model.IModelFactory
 import org.thymeleaf.model.ITemplateEvent
 import org.thymeleaf.model.IProcessableElementTag
 import org.thymeleaf.model.IStandaloneElementTag
@@ -12,9 +13,9 @@ import org.thymeleaf.model.ICloseElementTag
 import org.thymeleaf.processor.element.AbstractElementModelProcessor
 import org.thymeleaf.processor.element.IElementModelStructureHandler
 import org.thymeleaf.standard.expression.StandardExpressions
-import org.thymeleaf.standard.expression.IStandardExpressionParser
 import org.thymeleaf.standard.processor.StandardReplaceTagProcessor
 import org.thymeleaf.templatemode.TemplateMode
+import java.lang.reflect.Constructor
 
 
 class CompositionElementModelProcessor(
@@ -25,109 +26,121 @@ class CompositionElementModelProcessor(
     private val slotTagName = "$dialectPrefix:slot"
     private val slotNameAttributeName = "$dialectPrefix:name"
     private val componentPath = buildComponentPath(componentsPath, componentClass, elementName)
+    private val componentConstructor: Constructor<out CompositionComponent> =
+        componentClass.getConstructor(CompositionComponentContext::class.java)
+
+    @Volatile private var cachedFragment: FragmentInfo? = null
+
+    private class FragmentInfo(
+        val segments: Array<IModel>,           // events between slot markers; segments.size == slotMarkerNames.size + 1
+        val slotMarkerNames: Array<String>,
+    )
 
     companion object {
         private const val PRECEDENCE: Int = StandardReplaceTagProcessor.PRECEDENCE
     }
 
     override fun doProcess(context: ITemplateContext, tag: IModel, structureHandler: IElementModelStructureHandler) {
-        val expressionParser = StandardExpressions.getExpressionParser(context.configuration)
-        val fragmentModel = loadFragmentModel(context)
+        val fragment = getOrLoadFragment(context)
+        val slots = extractSlots(tag, context.modelFactory)
+        val attrs = extractAttrs(tag.get(0) as IProcessableElementTag, context)
 
-        val slots = extractSlots(tag)
-        val newModel = prepareModel(context, fragmentModel, slots)
-
-        val attrs = extractAttrs(tag.get(0) as IProcessableElementTag, context, expressionParser)
         val componentContext = CompositionComponentContext(attrs, slots.keys, context, structureHandler)
-        val componentInstance = componentClass.constructors.first().newInstance(componentContext)
+        val componentInstance = componentConstructor.newInstance(componentContext)
         structureHandler.setLocalVariable(elementName, componentInstance)
 
-        tag.reset() // clear the model reference
-        tag.addModel(newModel)
+        tag.reset()
+        renderFragmentInto(tag, fragment, slots)
     }
 
+    private fun getOrLoadFragment(context: ITemplateContext): FragmentInfo {
+        val cached = cachedFragment
+        if (cached != null) return cached
 
-
-    private fun loadFragmentModel(context: ITemplateContext): TemplateModel {
-        try {
-            return context.configuration.templateManager.parseStandalone(context, componentPath, null, null, true, true)
+        val templateModel = try {
+            context.configuration.templateManager.parseStandalone(context, componentPath, null, null, true, true)
         } catch (e: Exception) {
             throw TemplateProcessingException("${CompositionDialect.DIALECT_NAME}: Could not load template for component \"$elementName\" from \"$componentPath.html\" (relative to thymeleaf templates path)")
         }
+
+        // Pre-split the fragment into Model segments separated by slot markers.
+        // At render time each segment is bulk-copied via addModel (System.arraycopy)
+        // instead of inserted event-by-event.
+        val modelFactory = context.modelFactory
+        val segments = ArrayList<IModel>()
+        val names = ArrayList<String>()
+
+        var currentSegment = modelFactory.createModel()
+        for (i in 1 until templateModel.size() - 1) {
+            val event = templateModel.get(i)
+            if (event is IStandaloneElementTag && event.elementCompleteName == slotTagName) {
+                segments.add(currentSegment)
+                names.add(event.getAttributeValue(slotNameAttributeName) ?: CompositionComponent.DEFAULT_SLOT)
+                currentSegment = modelFactory.createModel()
+            } else {
+                currentSegment.add(event)
+            }
+        }
+        segments.add(currentSegment)
+
+        val info = FragmentInfo(segments.toTypedArray(), names.toTypedArray())
+        cachedFragment = info
+        return info
     }
 
+    private fun renderFragmentInto(target: IModel, fragment: FragmentInfo, slots: Map<String, List<ITemplateEvent>>) {
+        val segments = fragment.segments
+        val slotNames = fragment.slotMarkerNames
 
+        target.addModel(segments[0])
+        for (i in slotNames.indices) {
+            val content = slots[slotNames[i]]
+            if (content != null) {
+                for (event in content) target.add(event)
+            }
+            target.addModel(segments[i + 1])
+        }
+    }
 
-    private fun extractSlots(tag: IModel): HashMap<String?, ArrayList<ITemplateEvent>> {
-        val slots = HashMap<String?, ArrayList<ITemplateEvent>>()
-        var slotName: String? = null
+    private fun extractSlots(tag: IModel, modelFactory: IModelFactory): HashMap<String, ArrayList<ITemplateEvent>> {
+        val slots = HashMap<String, ArrayList<ITemplateEvent>>(4)
+        var slotName: String = CompositionComponent.DEFAULT_SLOT
         var level = 0
         for (i in 1 until tag.size() - 1) {
-            if (tag.get(i) is IOpenElementTag) {
+            var event: ITemplateEvent = tag.get(i)
+            if (event is IOpenElementTag) {
                 level++
-            } 
-            else if (tag.get(i) is ICloseElementTag) {
+            } else if (event is ICloseElementTag) {
                 level--
             }
-            if ((level == 1) && (tag.get(i) is IProcessableElementTag) && (tag.get(i) as IProcessableElementTag).hasAttribute(slotTagName)) {
-                slotName = (tag.get(i) as IProcessableElementTag).getAttributeValue(slotTagName)
+            if (event is IProcessableElementTag && event.hasAttribute(slotTagName)) {
+                if (level == 1) {
+                    slotName = event.getAttributeValue(slotTagName) ?: CompositionComponent.DEFAULT_SLOT
+                }
+                event = modelFactory.removeAttribute(event, slotTagName)
             }
-            slots.getOrPut(slotName) { ArrayList() }.add(tag.get(i))
-            if ((level == 0) && (tag.get(i) is ICloseElementTag)) {
-                slotName = null // Reset slotName when back on root level
+            slots.getOrPut(slotName) { ArrayList() }.add(event)
+            if ((level == 0) && (event is ICloseElementTag)) {
+                slotName = CompositionComponent.DEFAULT_SLOT
             }
         }
         return slots
     }
 
-
-
-    private fun prepareModel(context: ITemplateContext, fragmentModel: TemplateModel, slots: HashMap<String?, ArrayList<ITemplateEvent>>): IModel {
-        val modelFactory = context.modelFactory
-        val newModel = modelFactory.createModel()
-
-        // Copy all elements into a new Model
-        for (i in 1 until fragmentModel.size()-1) {
-            val fragmentPart = fragmentModel.get(i)
-            if ((fragmentPart is IStandaloneElementTag) &&  ((fragmentPart).elementCompleteName == slotTagName)) {
-                val slotName = fragmentPart.getAttributeValue(slotNameAttributeName)
-                if (slots.containsKey(slotName)) {
-                    for (j in 0 until slots[slotName]!!.size) {
-                        newModel.add(slots[slotName]!![j])
-                    }
-                }
-            }
-            else {
-                newModel.add(fragmentPart)
-            }
-        }
-        return newModel
-    }
-
-
-
-    private fun extractAttrs(rootElement: IProcessableElementTag, context: ITemplateContext, expressionParser: IStandardExpressionParser): HashMap<String, Any?> {
-        val attrs = HashMap<String, Any?>()
-        rootElement.allAttributes.forEach {
-            val plainAttributeName = it.attributeDefinition.attributeName.attributeName
-
-            // Process and populate prefixed attribute variables
-            if(it.attributeDefinition.attributeName.prefix == dialectPrefix) {
-                // It seems not efficient to extract and reassign the values.
-                // Why doesn't it work like here??:
-                // https://github.com/thymeleaf/thymeleaf/blob/120a0e9cc5d768a7b21abb19b4f4122bdc019206/lib/thymeleaf/src/main/java/org/thymeleaf/standard/processor/AbstractStandardFragmentInsertionTagProcessor.java#L264-L271
-                val valueContent = expressionParser.parseExpression(context, it.value).execute(context)
-                // structureHandler.setLocalVariable(plainAttributeName, valueContent)
-                attrs[plainAttributeName] = valueContent
-            }
-            else {
-                attrs[plainAttributeName] = it.value
+    private fun extractAttrs(rootElement: IProcessableElementTag, context: ITemplateContext): HashMap<String, Any?> {
+        val allAttributes = rootElement.allAttributes
+        val attrs = HashMap<String, Any?>(allAttributes.size)
+        val expressionParser = StandardExpressions.getExpressionParser(context.configuration)
+        for (attr in allAttributes) {
+            val plainAttributeName = attr.attributeDefinition.attributeName.attributeName
+            if (attr.attributeDefinition.attributeName.prefix == dialectPrefix) {
+                attrs[plainAttributeName] = expressionParser.parseExpression(context, attr.value).execute(context)
+            } else {
+                attrs[plainAttributeName] = attr.value
             }
         }
         return attrs
     }
-
-
 
     private fun buildComponentPath(componentsPath: String?, componentClass: Class<out CompositionComponent>, elementName: String): String {
         val pathParts = mutableListOf<String>()

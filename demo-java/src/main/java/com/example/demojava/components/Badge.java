@@ -9,10 +9,11 @@ public class Badge extends CompositionComponent {
 
     public Badge(CompositionComponentContext context) {
         super(context);
-        this.type = context.getAttributes().get("type").toString();
+        Object typeAttr = context.getAttributes().get("type");
+        this.type = typeAttr != null ? typeAttr.toString() : null;
     }
 
     public String classNames() {
-        return "badge " + ((this.type == "danger") ? "bg-danger" : "bg-secondary");
+        return "badge " + ("danger".equals(this.type) ? "bg-danger" : "bg-secondary");
     }
 }

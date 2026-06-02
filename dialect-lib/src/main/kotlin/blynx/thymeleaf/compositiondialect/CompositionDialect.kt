@@ -24,7 +24,7 @@ class CompositionDialect @JvmOverloads constructor(
         return componentClasses.map {
             // TODO: more fancy handling of name: camelcase to kebab case or snake case something like that, maybe even configurable
             val tagName = it.simpleName.lowercase()
-            val processor = CompositionElementModelProcessor(DIALECT_PREFIX, tagName, it, componentsPath)
+            val processor = CompositionElementModelProcessor(dialectPrefix, tagName, it, componentsPath)
             processor
         }.toHashSet()
     }

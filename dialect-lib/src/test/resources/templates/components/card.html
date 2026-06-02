@@ -1,0 +1,5 @@
+<div>
+  <header id="card-header" th:if="${card.hasSlot('header')}"><c:slot c:name="header" /></header>
+  <main id="card-body"><c:slot /></main>
+  <footer id="card-footer" th:if="${card.hasSlot('footer')}"><c:slot c:name="footer" /></footer>
+</div>
