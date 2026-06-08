@@ -2,10 +2,11 @@ plugins {
     id("org.jetbrains.kotlin.jvm") version "2.3.21"
     `java-library`
     `maven-publish`
+     id("com.github.ben-manes.versions") version "0.54.0"
 }
 
 group = "blynx.thymeleaf"
-version = "1.0.0"
+version = "1.0.1"
 
 repositories {
     mavenCentral()
@@ -14,6 +15,7 @@ repositories {
 dependencies {
     implementation("org.reflections:reflections:0.10.2")
     implementation("org.thymeleaf:thymeleaf:3.1.5.RELEASE")
+    compileOnly("org.springframework.boot:spring-boot-autoconfigure:3.5.0")
 
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testImplementation("org.junit.jupiter:junit-jupiter-engine:5.14.4")
