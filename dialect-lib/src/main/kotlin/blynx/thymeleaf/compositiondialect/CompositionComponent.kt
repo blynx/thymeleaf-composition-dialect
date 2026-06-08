@@ -1,14 +1,35 @@
 package blynx.thymeleaf.compositiondialect
 
-import org.thymeleaf.context.ITemplateContext
-import org.thymeleaf.processor.element.IElementModelStructureHandler
+import java.util.Locale
+
+class TrackingAttributes(private val raw: Map<String, Any?>) {
+    private val accessed = mutableSetOf<String>()
+
+    operator fun get(name: String): Any? {
+        accessed.add(name)
+        return raw[name]
+    }
+
+    fun containsKey(name: String): Boolean {
+        accessed.add(name)
+        return raw.containsKey(name)
+    }
+
+    fun rest(): Map<String, Any?> = raw.filterKeys { it !in accessed }
+}
 
 class CompositionComponentContext(
-    val attributes: Map<String, Any?>,
+    val attributes: TrackingAttributes,
     val slotNames: Set<String>,
-    val context: ITemplateContext,
-    val structureHandler: IElementModelStructureHandler
-)
+    val locale: Locale,
+    private val messageResolver: (String, Array<out Any?>) -> String?,
+    private val variableReader: (String) -> Any?,
+    private val variableWriter: (String, Any?) -> Unit,
+) {
+    fun message(code: String, vararg params: Any?): String = messageResolver(code, params) ?: code
+    fun variable(name: String): Any? = variableReader(name)
+    fun setVariable(name: String, value: Any?) = variableWriter(name, value)
+}
 
 open class CompositionComponent(
     private val componentContext: CompositionComponentContext,
@@ -18,8 +39,9 @@ open class CompositionComponent(
         const val path: String = ""
     }
 
+    val restAttributes: Map<String, Any?>
+        get() = componentContext.attributes.rest()
+
     @JvmOverloads
-    fun hasSlot(slotName: String = DEFAULT_SLOT): Boolean {
-        return this.componentContext.slotNames.contains(slotName)
-    }
+    fun hasSlot(slotName: String = DEFAULT_SLOT): Boolean = componentContext.slotNames.contains(slotName)
 }

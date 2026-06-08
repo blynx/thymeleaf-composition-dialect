@@ -96,4 +96,34 @@ class CompositionElementModelProcessorTest {
         val result = engine.process("<c:label c:value=\"\${msg}\" />", ctx)
         assertTrue("evaluated" in result)
     }
+
+    @Test
+    fun `heading outside magic-headings defaults to level 1`() {
+        val result = engine.process("<c:heading>text</c:heading>", Context())
+        assertTrue("id=\"heading-1\"" in result)
+    }
+
+    @Test
+    fun `heading inside magic-headings uses inherited level`() {
+        val result = engine.process("<c:magic-headings><c:heading>text</c:heading></c:magic-headings>", Context())
+        assertTrue("id=\"heading-1\"" in result)
+    }
+
+    @Test
+    fun `heading inside nested magic-headings increments level`() {
+        val result = engine.process(
+            "<c:magic-headings><c:magic-headings><c:heading>text</c:heading></c:magic-headings></c:magic-headings>",
+            Context()
+        )
+        assertTrue("id=\"heading-2\"" in result)
+    }
+
+    @Test
+    fun `explicit level attribute overrides inherited level`() {
+        val result = engine.process(
+            """<c:magic-headings><c:heading c:level="${'$'}{5}">text</c:heading></c:magic-headings>""",
+            Context()
+        )
+        assertTrue("id=\"heading-5\"" in result)
+    }
 }

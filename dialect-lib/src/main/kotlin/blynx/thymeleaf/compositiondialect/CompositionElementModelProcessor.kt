@@ -45,9 +45,20 @@ class CompositionElementModelProcessor(
         val slots = extractSlots(tag, context.modelFactory)
         val attrs = extractAttrs(tag.get(0) as IProcessableElementTag, context)
 
-        val componentContext = CompositionComponentContext(attrs, slots.keys, context, structureHandler)
-        val componentInstance = componentConstructor.newInstance(componentContext)
-        structureHandler.setLocalVariable(elementName, componentInstance)
+        val componentContext = CompositionComponentContext(
+            TrackingAttributes(attrs),
+            slots.keys,
+            context.locale,
+            { code, params -> context.getMessage(CompositionElementModelProcessor::class.java, code, params, false) },
+            { name -> context.getVariable(name) },
+            { name, value -> structureHandler.setLocalVariable(name, value) }
+        )
+        val componentInstance = try {
+            componentConstructor.newInstance(componentContext)
+        } catch (e: Exception) {
+            throw TemplateProcessingException("${CompositionDialect.DIALECT_NAME}: Could not instantiate component \"$elementName\" (${componentClass.name})", e)
+        }
+        structureHandler.setLocalVariable("this", componentInstance)
 
         tag.reset()
         renderFragmentInto(tag, fragment, slots)

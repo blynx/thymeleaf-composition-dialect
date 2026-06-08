@@ -12,20 +12,19 @@ class CompositionDialect @JvmOverloads constructor(
 ) : AbstractProcessorDialect(
     name, prefix, processorPrecedence
 ) {
-    companion object{
+    companion object {
         const val DIALECT_NAME = "Composition Dialect"
         private const val DIALECT_PREFIX = "c"
     }
 
     override fun getProcessors(dialectPrefix: String): HashSet<IProcessor> {
-
         val componentClasses = Reflections(componentPackage).getSubTypesOf(CompositionComponent::class.java)
 
-        return componentClasses.map {
-            // TODO: more fancy handling of name: camelcase to kebab case or snake case something like that, maybe even configurable
-            val tagName = it.simpleName.lowercase()
-            val processor = CompositionElementModelProcessor(dialectPrefix, tagName, it, componentsPath)
-            processor
-        }.toHashSet()
+        val processors = componentClasses.mapTo(HashSet<IProcessor>()) { componentClass ->
+            val tagName = componentClass.simpleName.replace(Regex("(?!^)(?=[A-Z][a-z])"), "-").lowercase()
+            CompositionElementModelProcessor(dialectPrefix, tagName, componentClass, componentsPath)
+        }
+        processors.add(CompositionRestAttributesTagProcessor(dialectPrefix))
+        return processors
     }
 }
