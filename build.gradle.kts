@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "blynx.thymeleaf"
-version = "1.0.1"
+version = "0.3.0"
 
 repositories {
     mavenCentral()
