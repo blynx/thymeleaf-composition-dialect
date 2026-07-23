@@ -62,16 +62,14 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
     private record CachedFragment(FragmentInfo info, ICacheEntryValidity validity) {
     }
 
-    public CompositionElementModelProcessor(String dialectPrefix, String elementName,
-                                            Class<? extends CompositionComponent> componentClass,
-                                            String componentsPath) {
-        super(TemplateMode.HTML, dialectPrefix, elementName, true, null, false, PRECEDENCE);
+    public CompositionElementModelProcessor(String dialectPrefix, ComponentDescriptor descriptor) {
+        super(TemplateMode.HTML, dialectPrefix, descriptor.tagName(), true, null, false, PRECEDENCE);
         this.dialectPrefix = dialectPrefix;
-        this.elementName = elementName;
-        this.componentClass = componentClass;
+        this.elementName = descriptor.tagName();
+        this.componentClass = descriptor.componentClass();
         this.slotTagName = dialectPrefix + ":slot";
         this.slotNameAttributeName = dialectPrefix + ":name";
-        this.componentPath = buildComponentPath(componentsPath, componentClass, elementName);
+        this.componentPath = descriptor.templatePath();
         Constructor<? extends CompositionComponent> componentConstructor;
         try {
             componentConstructor = componentClass.getConstructor(CompositionComponentContext.class);
@@ -266,29 +264,5 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
                 }
             };
         }
-    }
-
-    private String buildComponentPath(String componentsPath, Class<? extends CompositionComponent> componentClass,
-                                      String elementName) {
-        List<String> pathParts = new ArrayList<>();
-        if (componentsPath != null && !componentsPath.isEmpty()) {
-            pathParts.add(trimSlashes(componentsPath));
-        }
-        String componentPath;
-        try {
-            componentPath = trimSlashes((String) componentClass.getField("path").get(componentClass));
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(CompositionDialect.DIALECT_NAME
-                    + ": Could not read the static \"path\" field of component " + componentClass.getName(), e);
-        }
-        if (!componentPath.isEmpty()) {
-            pathParts.add(componentPath);
-        }
-        pathParts.add(elementName);
-        return String.join("/", pathParts);
-    }
-
-    private static String trimSlashes(String value) {
-        return value.replaceAll("^/+|/+$", "");
     }
 }

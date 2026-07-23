@@ -1,5 +1,7 @@
 package blynx.thymeleaf.compositiondialect;
 
+import java.util.List;
+
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.thymeleaf.ThymeleafAutoConfiguration;
@@ -24,5 +26,11 @@ public class CompositionDialectAutoConfiguration {
                 properties.componentsPath(),
                 CompositionDialect.DIALECT_NAME,
                 properties.prefix());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ComponentRegistry componentRegistry(List<CompositionDialect> dialects) {
+        return ComponentRegistry.aggregate(dialects.stream().map(CompositionDialect::getRegistry).toList());
     }
 }
