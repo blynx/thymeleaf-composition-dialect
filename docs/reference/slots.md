@@ -17,7 +17,7 @@
 
 ## Named slots
 
-Add `c:name` to `<c:slot />` to define named slots. At the call site, assign content to a named slot with the `c:slot` attribute on any child element:
+Add `c:name` to `<c:slot />` to define named slots. At the call site, assign content to a named slot with the `c:slot` attribute on a direct child element:
 
 ```html
 <!-- card.html -->
@@ -36,6 +36,28 @@ Add `c:name` to `<c:slot />` to define named slots. At the call site, assign con
     <a c:slot="footer" href="#">Footer link</a>
 </c:card>
 ```
+
+## Slot assignment scope
+
+`c:slot` follows the same rule as the native shadow-DOM `slot` attribute: it binds to the
+element's direct parent. Only direct children of a component tag are assigned to that
+component's slots. When components nest, each component assigns its own children —
+`c:slot` inside a nested component invocation is consumed by the inner component, not the
+outer one:
+
+```html
+<c:card>
+    <h2 c:slot="header">Outer card header</h2>
+    <c:card>
+        <h2 c:slot="header">Inner card header</h2>
+        <p>Inner card body.</p>
+    </c:card>
+</c:card>
+```
+
+On elements deeper than a direct child (with no component in between), `c:slot` is inert:
+it has no effect and is kept in the rendered output, just like the native `slot` attribute
+on an element that is not a shadow-host child.
 
 ## `hasSlot()`
 

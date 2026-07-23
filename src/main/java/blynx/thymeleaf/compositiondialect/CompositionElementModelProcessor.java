@@ -51,10 +51,8 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
 
     private volatile CachedFragment cachedFragment = null;
 
-    // The c:slot attribute name interned in this configuration's repository. The AttributeName
-    // overloads of hasAttribute/getAttributeValue/removeAttribute then match by identity, while
-    // the String overloads fall back to a JVM-global fair read-write lock for every tag that
-    // does NOT carry the attribute — a scalability bottleneck under concurrent rendering.
+    // Interned c:slot name: the AttributeName overloads match by identity, while the String
+    // overloads take a JVM-global lock for every tag that lacks the attribute.
     private volatile AttributeName slotAttributeName = null;
 
     /** Events between slot markers; {@code segments.length == slotMarkerNames.length + 1}. */
@@ -129,9 +127,7 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
                     + ".html\" (relative to thymeleaf templates path)");
         }
 
-        // Pre-split the fragment into Model segments separated by slot markers.
-        // At render time each segment is bulk-copied via addModel (System.arraycopy)
-        // instead of inserted event-by-event.
+        // Pre-split around the slot markers so rendering bulk-copies each segment via addModel.
         IModelFactory modelFactory = context.getModelFactory();
         List<IModel> segments = new ArrayList<>();
         List<String> names = new ArrayList<>();
@@ -152,9 +148,8 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         segments.add(currentSegment);
 
         FragmentInfo info = new FragmentInfo(segments.toArray(new IModel[0]), names.toArray(new String[0]));
-        // Mirror Thymeleaf's own cache validation: cache only when the resolved template is
-        // cacheable (so dev-mode template edits are picked up) and re-check validity on each
-        // hit (so TTL-based resolvers expire). Not flushed by TemplateEngine.clearTemplateCaches().
+        // Cache only cacheable templates and re-check validity per hit (dev-mode edits, TTL expiry).
+        // Not flushed by TemplateEngine.clearTemplateCaches().
         ICacheEntryValidity validity = templateModel.getTemplateData().getValidity();
         if (validity.isCacheable()) {
             cachedFragment = new CachedFragment(info, validity);
@@ -178,10 +173,7 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
 
     private Map<String, IModel> extractSlots(IModel tag, IModelFactory modelFactory, AttributeName slotAttr) {
         Map<String, IModel> slots = HashMap.newHashMap(4);
-        // Slot content is collected into per-slot models so it can be spliced into the target
-        // with a bulk addModel instead of event-by-event. The locals track the model currently
-        // receiving events, saving a map lookup per event; the default slot keeps its own
-        // reference because every top-level close switches back to it.
+        // defaultSlot is held separately because every top-level close switches back to it
         IModel defaultSlot = null;
         IModel currentSlot = null;
         String slotName = CompositionComponent.DEFAULT_SLOT;
@@ -195,14 +187,16 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
             } else if (event instanceof ICloseElementTag) {
                 level--;
             }
-            if (event instanceof IProcessableElementTag processableTag && processableTag.hasAttribute(slotAttr)) {
-                if ((opens && level == 1) || (standalone && level == 0)) {
-                    String value = processableTag.getAttributeValue(slotAttr);
-                    String newName = value != null ? value : CompositionComponent.DEFAULT_SLOT;
-                    if (!newName.equals(slotName)) {
-                        slotName = newName;
-                        currentSlot = null;
-                    }
+            // Like native shadow-DOM slotting, c:slot is consumed on direct children only;
+            // deeper occurrences are left for nested component invocations to assign.
+            if (((opens && level == 1) || (standalone && level == 0))
+                    && event instanceof IProcessableElementTag processableTag
+                    && processableTag.hasAttribute(slotAttr)) {
+                String value = processableTag.getAttributeValue(slotAttr);
+                String newName = value != null ? value : CompositionComponent.DEFAULT_SLOT;
+                if (!newName.equals(slotName)) {
+                    slotName = newName;
+                    currentSlot = null;
                 }
                 event = modelFactory.removeAttribute(processableTag, slotAttr);
             }
@@ -263,8 +257,7 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
                     (Function<CompositionComponentContext, CompositionComponent>) callSite.getTarget().invokeExact();
             return factory;
         } catch (Throwable e) {
-            // e.g. JPMS setups where the component's package is not accessible from this module:
-            // fall back to core reflection.
+            // e.g. JPMS setups where the component's package is not accessible from this module
             return componentContext -> {
                 try {
                     return constructor.newInstance(componentContext);
@@ -281,7 +274,6 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         if (componentsPath != null && !componentsPath.isEmpty()) {
             pathParts.add(trimSlashes(componentsPath));
         }
-        // get component path field of reflected Component class
         String componentPath;
         try {
             componentPath = trimSlashes((String) componentClass.getField("path").get(componentClass));

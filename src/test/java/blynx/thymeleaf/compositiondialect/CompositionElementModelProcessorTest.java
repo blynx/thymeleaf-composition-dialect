@@ -155,6 +155,31 @@ class CompositionElementModelProcessorTest {
     }
 
     @Test
+    void nestedComponentHandlesItsOwnSlotAssignments() {
+        String result = engine.process(
+                "<c:card><span c:slot=\"header\" id=\"oh\">outer</span>"
+                        + "<c:card><span c:slot=\"header\" id=\"ih\">inner</span><span id=\"ib\">body</span></c:card>"
+                        + "</c:card>",
+                new Context());
+        int outerBody = result.indexOf("card-body");
+        assertTrue(result.indexOf("id=\"oh\"") < outerBody);
+        int innerHeader = result.indexOf("card-header", outerBody);
+        assertTrue(innerHeader > 0);
+        assertTrue(result.indexOf("id=\"ih\"") > innerHeader);
+        assertTrue(result.indexOf("id=\"ih\"") < result.indexOf("id=\"ib\""));
+        assertFalse(result.contains("c:slot"));
+    }
+
+    @Test
+    void slotAttributeDeeperThanDirectChildrenIsInertAndKept() {
+        String result = engine.process(
+                "<c:wrapper><div><span c:slot=\"header\" id=\"s\">deep</span></div></c:wrapper>",
+                new Context());
+        assertTrue(result.indexOf("id=\"wrapper\"") < result.indexOf("id=\"s\""));
+        assertTrue(result.contains("c:slot=\"header\""));
+    }
+
+    @Test
     void nonCacheableComponentTemplateIsReloadedOnChange(@TempDir Path templateDir) throws IOException {
         TemplateEngine fileEngine = fileBasedEngine(templateDir, false);
         writeWrapperTemplate(templateDir, "v1");
