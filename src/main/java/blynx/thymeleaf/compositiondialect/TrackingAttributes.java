@@ -29,7 +29,7 @@ public class TrackingAttributes {
     }
 
     public Map<String, Object> rest() {
-        var result = new HashMap<String, Object>();
+        var result = HashMap.<String, Object>newHashMap(raw.size());
         // Not Collectors.toMap: attribute values may be null, which that collector rejects.
         raw.forEach((key, value) -> {
             if (!accessed.contains(key)) {

@@ -3,13 +3,18 @@ package blynx.thymeleaf.compositiondialect;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Set;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
+import org.thymeleaf.templateresolver.FileTemplateResolver;
 import org.thymeleaf.templateresolver.StringTemplateResolver;
 
 class CompositionElementModelProcessorTest {
@@ -125,5 +130,81 @@ class CompositionElementModelProcessorTest {
                 "<c:magic-headings><c:heading c:level=\"${5}\">text</c:heading></c:magic-headings>",
                 new Context());
         assertTrue(result.contains("id=\"heading-5\""));
+    }
+
+    @Test
+    void slotAttributeOnStandaloneChildAssignsThatSlot() {
+        String result = engine.process(
+                "<c:card><img c:slot=\"header\" id=\"i\"><p id=\"b\">Body</p></c:card>",
+                new Context());
+        assertTrue(result.contains("card-header"));
+        assertTrue(result.indexOf("id=\"i\"") < result.indexOf("card-body"));
+        assertTrue(result.indexOf("card-body") < result.indexOf("id=\"b\""));
+        assertFalse(result.contains("c:slot"));
+    }
+
+    @Test
+    void nonContiguousContentForSameSlotConcatenatesInDocumentOrder() {
+        String result = engine.process(
+                "<c:card><span c:slot=\"header\" id=\"h1\">A</span><span id=\"b1\">B</span>"
+                        + "<span c:slot=\"header\" id=\"h2\">C</span></c:card>",
+                new Context());
+        assertTrue(result.indexOf("id=\"h1\"") < result.indexOf("id=\"h2\""));
+        assertTrue(result.indexOf("id=\"h2\"") < result.indexOf("card-body"));
+        assertTrue(result.indexOf("card-body") < result.indexOf("id=\"b1\""));
+    }
+
+    @Test
+    void nonCacheableComponentTemplateIsReloadedOnChange(@TempDir Path templateDir) throws IOException {
+        TemplateEngine fileEngine = fileBasedEngine(templateDir, false);
+        writeWrapperTemplate(templateDir, "v1");
+
+        String first = fileEngine.process("<c:wrapper>x</c:wrapper>", new Context());
+        assertTrue(first.contains("id=\"v1\""));
+
+        writeWrapperTemplate(templateDir, "v2");
+        String second = fileEngine.process("<c:wrapper>x</c:wrapper>", new Context());
+        assertTrue(second.contains("id=\"v2\""));
+    }
+
+    @Test
+    void cacheableComponentTemplateStaysCached(@TempDir Path templateDir) throws IOException {
+        TemplateEngine fileEngine = fileBasedEngine(templateDir, true);
+        writeWrapperTemplate(templateDir, "v1");
+
+        String first = fileEngine.process("<c:wrapper>x</c:wrapper>", new Context());
+        assertTrue(first.contains("id=\"v1\""));
+
+        writeWrapperTemplate(templateDir, "v2");
+        String second = fileEngine.process("<c:wrapper>x</c:wrapper>", new Context());
+        assertTrue(second.contains("id=\"v1\""));
+    }
+
+    private TemplateEngine fileBasedEngine(Path templateDir, boolean cacheable) {
+        FileTemplateResolver componentResolver = new FileTemplateResolver();
+        componentResolver.setOrder(1);
+        componentResolver.setPrefix(templateDir + "/");
+        componentResolver.setSuffix(".html");
+        componentResolver.setResolvablePatterns(Set.of("components/*"));
+        componentResolver.setCharacterEncoding("UTF-8");
+        componentResolver.setCacheable(cacheable);
+
+        StringTemplateResolver pageResolver = new StringTemplateResolver();
+        pageResolver.setOrder(2);
+        pageResolver.setCacheable(false);
+
+        TemplateEngine fileEngine = new TemplateEngine();
+        fileEngine.addTemplateResolver(componentResolver);
+        fileEngine.addTemplateResolver(pageResolver);
+        fileEngine.addDialect(new CompositionDialect(
+                "blynx.thymeleaf.compositiondialect.testcomponents",
+                "components"));
+        return fileEngine;
+    }
+
+    private void writeWrapperTemplate(Path templateDir, String marker) throws IOException {
+        Files.createDirectories(templateDir.resolve("components"));
+        Files.writeString(templateDir.resolve("components/wrapper.html"),
+                "<div id=\"" + marker + "\"><c:slot /></div>");
     }
 }

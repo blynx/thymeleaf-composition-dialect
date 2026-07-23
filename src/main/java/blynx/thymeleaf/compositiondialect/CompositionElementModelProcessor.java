@@ -1,13 +1,22 @@
 package blynx.thymeleaf.compositiondialect;
 
+import java.lang.invoke.CallSite;
+import java.lang.invoke.LambdaMetafactory;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
+import org.thymeleaf.IEngineConfiguration;
+import org.thymeleaf.cache.ICacheEntryValidity;
 import org.thymeleaf.context.ITemplateContext;
+import org.thymeleaf.engine.AttributeName;
 import org.thymeleaf.engine.TemplateModel;
 import org.thymeleaf.exceptions.TemplateProcessingException;
 import org.thymeleaf.model.ICloseElementTag;
@@ -38,12 +47,21 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
     private final String slotTagName;
     private final String slotNameAttributeName;
     private final String componentPath;
-    private final Constructor<? extends CompositionComponent> componentConstructor;
+    private final Function<CompositionComponentContext, CompositionComponent> componentFactory;
 
-    private volatile FragmentInfo cachedFragment = null;
+    private volatile CachedFragment cachedFragment = null;
+
+    // The c:slot attribute name interned in this configuration's repository. The AttributeName
+    // overloads of hasAttribute/getAttributeValue/removeAttribute then match by identity, while
+    // the String overloads fall back to a JVM-global fair read-write lock for every tag that
+    // does NOT carry the attribute — a scalability bottleneck under concurrent rendering.
+    private volatile AttributeName slotAttributeName = null;
 
     /** Events between slot markers; {@code segments.length == slotMarkerNames.length + 1}. */
     private record FragmentInfo(IModel[] segments, String[] slotMarkerNames) {
+    }
+
+    private record CachedFragment(FragmentInfo info, ICacheEntryValidity validity) {
     }
 
     public CompositionElementModelProcessor(String dialectPrefix, String elementName,
@@ -56,19 +74,22 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         this.slotTagName = dialectPrefix + ":slot";
         this.slotNameAttributeName = dialectPrefix + ":name";
         this.componentPath = buildComponentPath(componentsPath, componentClass, elementName);
+        Constructor<? extends CompositionComponent> componentConstructor;
         try {
-            this.componentConstructor = componentClass.getConstructor(CompositionComponentContext.class);
+            componentConstructor = componentClass.getConstructor(CompositionComponentContext.class);
         } catch (NoSuchMethodException e) {
             throw new IllegalStateException(CompositionDialect.DIALECT_NAME + ": Component \"" + elementName + "\" ("
                     + componentClass.getName() + ") must declare a public constructor taking a single "
                     + CompositionComponentContext.class.getSimpleName() + " argument", e);
         }
+        this.componentFactory = createComponentFactory(componentConstructor);
     }
 
     @Override
     protected void doProcess(ITemplateContext context, IModel tag, IElementModelStructureHandler structureHandler) {
         FragmentInfo fragment = getOrLoadFragment(context);
-        Map<String, List<ITemplateEvent>> slots = extractSlots(tag, context.getModelFactory());
+        Map<String, IModel> slots = extractSlots(tag, context.getModelFactory(),
+                slotAttributeName(context.getConfiguration()));
         Map<String, Object> attrs = extractAttrs((IProcessableElementTag) tag.get(0), context);
 
         CompositionComponentContext componentContext = new CompositionComponentContext(
@@ -81,7 +102,7 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
 
         CompositionComponent componentInstance;
         try {
-            componentInstance = componentConstructor.newInstance(componentContext);
+            componentInstance = componentFactory.apply(componentContext);
         } catch (Exception e) {
             throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME
                     + ": Could not instantiate component \"" + elementName + "\" (" + componentClass.getName() + ")", e);
@@ -93,9 +114,9 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
     }
 
     private FragmentInfo getOrLoadFragment(ITemplateContext context) {
-        FragmentInfo cached = cachedFragment;
-        if (cached != null) {
-            return cached;
+        CachedFragment cached = cachedFragment;
+        if (cached != null && cached.validity().isCacheStillValid()) {
+            return cached.info();
         }
 
         TemplateModel templateModel;
@@ -131,47 +152,70 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         segments.add(currentSegment);
 
         FragmentInfo info = new FragmentInfo(segments.toArray(new IModel[0]), names.toArray(new String[0]));
-        cachedFragment = info;
+        // Mirror Thymeleaf's own cache validation: cache only when the resolved template is
+        // cacheable (so dev-mode template edits are picked up) and re-check validity on each
+        // hit (so TTL-based resolvers expire). Not flushed by TemplateEngine.clearTemplateCaches().
+        ICacheEntryValidity validity = templateModel.getTemplateData().getValidity();
+        if (validity.isCacheable()) {
+            cachedFragment = new CachedFragment(info, validity);
+        }
         return info;
     }
 
-    private void renderFragmentInto(IModel target, FragmentInfo fragment, Map<String, List<ITemplateEvent>> slots) {
+    private void renderFragmentInto(IModel target, FragmentInfo fragment, Map<String, IModel> slots) {
         IModel[] segments = fragment.segments();
         String[] slotNames = fragment.slotMarkerNames();
 
         target.addModel(segments[0]);
         for (int i = 0; i < slotNames.length; i++) {
-            List<ITemplateEvent> content = slots.get(slotNames[i]);
+            IModel content = slots.get(slotNames[i]);
             if (content != null) {
-                for (ITemplateEvent event : content) {
-                    target.add(event);
-                }
+                target.addModel(content);
             }
             target.addModel(segments[i + 1]);
         }
     }
 
-    private Map<String, List<ITemplateEvent>> extractSlots(IModel tag, IModelFactory modelFactory) {
-        Map<String, List<ITemplateEvent>> slots = new HashMap<>(4);
+    private Map<String, IModel> extractSlots(IModel tag, IModelFactory modelFactory, AttributeName slotAttr) {
+        Map<String, IModel> slots = HashMap.newHashMap(4);
+        // Slot content is collected into per-slot models so it can be spliced into the target
+        // with a bulk addModel instead of event-by-event. The locals track the model currently
+        // receiving events, saving a map lookup per event; the default slot keeps its own
+        // reference because every top-level close switches back to it.
+        IModel defaultSlot = null;
+        IModel currentSlot = null;
         String slotName = CompositionComponent.DEFAULT_SLOT;
         int level = 0;
-        for (int i = 1; i < tag.size() - 1; i++) {
+        for (int i = 1, end = tag.size() - 1; i < end; i++) {
             ITemplateEvent event = tag.get(i);
-            if (event instanceof IOpenElementTag) {
+            boolean opens = event instanceof IOpenElementTag;
+            boolean standalone = event instanceof IStandaloneElementTag;
+            if (opens) {
                 level++;
             } else if (event instanceof ICloseElementTag) {
                 level--;
             }
-            if (event instanceof IProcessableElementTag processableTag && processableTag.hasAttribute(slotTagName)) {
-                if (level == 1) {
-                    String value = processableTag.getAttributeValue(slotTagName);
-                    slotName = value != null ? value : CompositionComponent.DEFAULT_SLOT;
+            if (event instanceof IProcessableElementTag processableTag && processableTag.hasAttribute(slotAttr)) {
+                if ((opens && level == 1) || (standalone && level == 0)) {
+                    String value = processableTag.getAttributeValue(slotAttr);
+                    String newName = value != null ? value : CompositionComponent.DEFAULT_SLOT;
+                    if (!newName.equals(slotName)) {
+                        slotName = newName;
+                        currentSlot = null;
+                    }
                 }
-                event = modelFactory.removeAttribute(processableTag, slotTagName);
+                event = modelFactory.removeAttribute(processableTag, slotAttr);
             }
-            slots.computeIfAbsent(slotName, key -> new ArrayList<>()).add(event);
-            if (level == 0 && event instanceof ICloseElementTag) {
+            if (currentSlot == null) {
+                currentSlot = slots.computeIfAbsent(slotName, key -> modelFactory.createModel());
+                if (slotName.equals(CompositionComponent.DEFAULT_SLOT)) {
+                    defaultSlot = currentSlot;
+                }
+            }
+            currentSlot.add(event);
+            if (level == 0 && (standalone || event instanceof ICloseElementTag)) {
                 slotName = CompositionComponent.DEFAULT_SLOT;
+                currentSlot = defaultSlot;
             }
         }
         return slots;
@@ -179,7 +223,7 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
 
     private Map<String, Object> extractAttrs(IProcessableElementTag rootElement, ITemplateContext context) {
         var allAttributes = rootElement.getAllAttributes();
-        Map<String, Object> attrs = new HashMap<>(allAttributes.length);
+        Map<String, Object> attrs = HashMap.newHashMap(allAttributes.length);
         var expressionParser = StandardExpressions.getExpressionParser(context.getConfiguration());
         for (var attr : allAttributes) {
             String plainAttributeName = attr.getAttributeDefinition().getAttributeName().getAttributeName();
@@ -191,6 +235,44 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
             }
         }
         return attrs;
+    }
+
+    private AttributeName slotAttributeName(IEngineConfiguration configuration) {
+        AttributeName name = slotAttributeName;
+        if (name == null) {
+            // Benign race: the repository interns the name, so every thread resolves the same instance.
+            name = configuration.getAttributeDefinitions()
+                    .forName(getTemplateMode(), dialectPrefix, "slot").getAttributeName();
+            slotAttributeName = name;
+        }
+        return name;
+    }
+
+    private static Function<CompositionComponentContext, CompositionComponent> createComponentFactory(
+            Constructor<? extends CompositionComponent> constructor) {
+        try {
+            MethodHandles.Lookup lookup = MethodHandles.lookup();
+            MethodHandle handle = lookup.unreflectConstructor(constructor);
+            CallSite callSite = LambdaMetafactory.metafactory(lookup, "apply",
+                    MethodType.methodType(Function.class),
+                    MethodType.methodType(Object.class, Object.class),
+                    handle,
+                    MethodType.methodType(CompositionComponent.class, CompositionComponentContext.class));
+            @SuppressWarnings("unchecked")
+            Function<CompositionComponentContext, CompositionComponent> factory =
+                    (Function<CompositionComponentContext, CompositionComponent>) callSite.getTarget().invokeExact();
+            return factory;
+        } catch (Throwable e) {
+            // e.g. JPMS setups where the component's package is not accessible from this module:
+            // fall back to core reflection.
+            return componentContext -> {
+                try {
+                    return constructor.newInstance(componentContext);
+                } catch (ReflectiveOperationException ex) {
+                    throw new IllegalStateException(ex);
+                }
+            };
+        }
     }
 
     private String buildComponentPath(String componentsPath, Class<? extends CompositionComponent> componentClass,
