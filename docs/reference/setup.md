@@ -4,14 +4,14 @@
 
 Create a package namespace for your component classes — it is supplied to the dialect so it can discover them automatically:
 
-```kotlin
-package com.example.demo.components
+```java
+package com.example.demo.components;
 ```
 
 Add the dialect to Thymeleaf:
 
-```kotlin
-templateEngine.addDialect(CompositionDialect("com.example.demo.components"))
+```java
+templateEngine.addDialect(new CompositionDialect("com.example.demo.components"));
 ```
 
 ### `CompositionDialect` parameters
@@ -39,13 +39,12 @@ thymeleaf.composition.components-path=components
 
 If you need to customise further, declare your own bean — auto-configuration backs off automatically:
 
-```kotlin
+```java
 @Configuration
 class Config {
     @Bean
-    fun compositionDialect() = CompositionDialect(
-        componentPackage = "com.example.demo.components",
-        componentsPath = "components"
-    )
+    CompositionDialect compositionDialect() {
+        return new CompositionDialect("com.example.demo.components", "components");
+    }
 }
 ```

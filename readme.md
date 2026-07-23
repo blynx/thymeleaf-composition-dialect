@@ -22,8 +22,8 @@ A flavour of ui component templating in Thymeleaf.
 
 Add the dialect to Thymeleaf with the package to scan for component classes:
 
-```kotlin
-templateEngine.addDialect(CompositionDialect("com.example.demo.components"))
+```java
+templateEngine.addDialect(new CompositionDialect("com.example.demo.components"));
 ```
 
 For Spring Boot, set the package in `application.properties`:
