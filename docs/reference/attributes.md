@@ -9,11 +9,21 @@ Plain attributes arrive as strings. Attributes prefixed with `c:` are evaluated 
 <c:button c:variant="${currentVariant}" /> <!-- variant = value of currentVariant -->
 ```
 
-Attributes are read in the component constructor via `context.attributes["key"]`:
+Attributes are read in the component constructor via `context.attributes().get("key")`:
 
-```kotlin
-class Button(context: CompositionComponentContext) : CompositionComponent(context) {
-    val variant: String = context.attributes["variant"]?.toString() ?: "primary"
+```java
+public class Button extends CompositionComponent {
+    private final String variant;
+
+    public Button(CompositionComponentContext context) {
+        super(context);
+        Object raw = context.attributes().get("variant");
+        this.variant = raw != null ? raw.toString() : "primary";
+    }
+
+    public String getVariant() {
+        return variant;
+    }
 }
 ```
 
@@ -21,10 +31,11 @@ class Button(context: CompositionComponentContext) : CompositionComponent(contex
 
 **Default in the component class — consumed and applied explicitly:**
 
-Use `?: "default"` in the property declaration. The attribute is consumed (will not appear in `restAttributes`) and applied explicitly in the template:
+Read the attribute in the constructor with an explicit fallback. The attribute is consumed (will not appear in `restAttributes`) and applied explicitly in the template:
 
-```kotlin
-val variant: String = context.attributes["variant"]?.toString() ?: "primary"
+```java
+Object raw = context.attributes().get("variant");
+this.variant = raw != null ? raw.toString() : "primary";
 ```
 
 ```html
@@ -48,14 +59,24 @@ For raw HTML attributes where you want a sensible default but the caller should 
 
 ## Rest attributes
 
-The dialect tracks which attributes have been accessed via `context.attributes["key"]`. Any attribute not accessed is considered _unconsumed_.
+The dialect tracks which attributes have been accessed via `context.attributes().get("key")`. Any attribute not accessed is considered _unconsumed_.
 
 `restAttributes` exposes the unconsumed attributes as a map:
 
-```kotlin
-class Button(context: CompositionComponentContext) : CompositionComponent(context) {
-    val variant: String = context.attributes["variant"]?.toString() ?: "primary"
-    // variant is consumed — type, disabled, and anything else the caller passes are not
+```java
+public class Button extends CompositionComponent {
+    private final String variant;
+
+    public Button(CompositionComponentContext context) {
+        super(context);
+        Object raw = context.attributes().get("variant");
+        this.variant = raw != null ? raw.toString() : "primary";
+        // variant is consumed — type, disabled, and anything else the caller passes are not
+    }
+
+    public String getVariant() {
+        return variant;
+    }
 }
 ```
 
@@ -87,9 +108,14 @@ Place `c:rest` on any element in a component template to spread all unconsumed a
 <div th:each="attr : ${this.restAttributes}" th:attr="${attr.key}=${attr.value}">
 ```
 
-```kotlin
+```java
 // access in the class
-val extraData = restAttributes.filterKeys { it.startsWith("data-") }
+Map<String, Object> dataAttrs = new HashMap<>();
+getRestAttributes().forEach((key, value) -> {
+    if (key.startsWith("data-")) {
+        dataAttrs.put(key, value);
+    }
+});
 ```
 
 `c:rest` is syntactic sugar over `restAttributes` — it spreads the map onto the element, merging with any static attributes already present (caller wins on conflict).

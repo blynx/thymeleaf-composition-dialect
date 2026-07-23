@@ -16,18 +16,28 @@ The class name determines the tag name — `PascalCase` is converted to `kebab-c
 
 Extend `CompositionComponent` and declare a constructor that takes `CompositionComponentContext`:
 
-```kotlin
-package com.example.demo.components
+```java
+package com.example.demo.components;
 
-import blynx.thymeleaf.compositiondialect.CompositionComponent
-import blynx.thymeleaf.compositiondialect.CompositionComponentContext
+import blynx.thymeleaf.compositiondialect.CompositionComponent;
+import blynx.thymeleaf.compositiondialect.CompositionComponentContext;
 
-class Button(context: CompositionComponentContext) : CompositionComponent(context) {
-    val variant: String = context.attributes["variant"]?.toString() ?: "primary"
+public class Button extends CompositionComponent {
+    private final String variant;
+
+    public Button(CompositionComponentContext context) {
+        super(context);
+        Object raw = context.attributes().get("variant");
+        this.variant = raw != null ? raw.toString() : "primary";
+    }
+
+    public String getVariant() {
+        return variant;
+    }
 }
 ```
 
-The component instance is available in its template as `${this}`.
+The component instance is available in its template as `${this}`, and its public getters are reachable as properties — `${this.variant}` resolves to `getVariant()`.
 
 ## Component template
 
@@ -42,12 +52,23 @@ Place the template at `{componentsPath}/{kebab-case-name}.html`:
 
 ## Subdirectories
 
-To organise templates into subdirectories, declare `path` in the companion object:
+To organise templates into subdirectories, declare a `public static final String path` field:
 
-```kotlin
-class Button(context: CompositionComponentContext) : CompositionComponent(context) {
-    companion object { const val path = "forms" }
-    val variant: String = context.attributes["variant"]?.toString() ?: "primary"
+```java
+public class Button extends CompositionComponent {
+    public static final String path = "forms";
+
+    private final String variant;
+
+    public Button(CompositionComponentContext context) {
+        super(context);
+        Object raw = context.attributes().get("variant");
+        this.variant = raw != null ? raw.toString() : "primary";
+    }
+
+    public String getVariant() {
+        return variant;
+    }
 }
 ```
 

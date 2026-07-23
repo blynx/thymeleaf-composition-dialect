@@ -41,8 +41,12 @@ Add `c:name` to `<c:slot />` to define named slots. At the call site, assign con
 
 `hasSlot()` checks whether the caller provided content for a slot — useful for conditionally rendering wrapping markup:
 
-```kotlin
-class Card(context: CompositionComponentContext) : CompositionComponent(context)
+```java
+public class Card extends CompositionComponent {
+    public Card(CompositionComponentContext context) {
+        super(context);
+    }
+}
 ```
 
 - `hasSlot()` — checks the default slot
