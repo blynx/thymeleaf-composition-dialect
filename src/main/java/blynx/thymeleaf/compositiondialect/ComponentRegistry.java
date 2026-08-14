@@ -147,8 +147,10 @@ public final class ComponentRegistry {
 
     /**
      * The template path a component's fragment is loaded from: the optional {@code componentsPath}
-     * root, the component's own static {@code path} sub-path (read reflectively so subclasses may
-     * shadow it), and the tag name, joined with {@code /}.
+     * root, the component's static {@code pathPrefix} (read reflectively, so a shared abstract base's
+     * declaration composes down to every subclass that doesn't redeclare it), the component's own static
+     * {@code path} sub-path (read reflectively so subclasses may shadow it), and the tag name — joined
+     * with {@code /}.
      */
     public static String buildComponentPath(String componentsPath, Class<? extends CompositionComponent> componentClass,
                                             String tagName) {
@@ -156,18 +158,25 @@ public final class ComponentRegistry {
         if (componentsPath != null && !componentsPath.isEmpty()) {
             pathParts.add(trimSlashes(componentsPath));
         }
-        String componentPath;
-        try {
-            componentPath = trimSlashes((String) componentClass.getField("path").get(componentClass));
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(CompositionDialect.DIALECT_NAME
-                    + ": Could not read the static \"path\" field of component " + componentClass.getName(), e);
+        String pathPrefix = readStaticStringField(componentClass, "pathPrefix");
+        if (!pathPrefix.isEmpty()) {
+            pathParts.add(pathPrefix);
         }
+        String componentPath = readStaticStringField(componentClass, "path");
         if (!componentPath.isEmpty()) {
             pathParts.add(componentPath);
         }
         pathParts.add(tagName);
         return String.join("/", pathParts);
+    }
+
+    private static String readStaticStringField(Class<? extends CompositionComponent> componentClass, String fieldName) {
+        try {
+            return trimSlashes((String) componentClass.getField(fieldName).get(componentClass));
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(CompositionDialect.DIALECT_NAME
+                    + ": Could not read the static \"" + fieldName + "\" field of component " + componentClass.getName(), e);
+        }
     }
 
     private static String trimSlashes(String value) {

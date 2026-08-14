@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Test;
 
 import blynx.thymeleaf.compositiondialect.registryfixtures.abstractbase.BaseThing;
 import blynx.thymeleaf.compositiondialect.registryfixtures.abstractbase.Widget;
+import blynx.thymeleaf.compositiondialect.registryfixtures.pathprefix.BareLeaf;
+import blynx.thymeleaf.compositiondialect.registryfixtures.pathprefix.Leaf;
 import blynx.thymeleaf.compositiondialect.testcomponents.Card;
 import blynx.thymeleaf.compositiondialect.testcomponents.MagicHeadings;
 
@@ -20,6 +22,8 @@ class ComponentRegistryTest {
             "blynx.thymeleaf.compositiondialect.registryfixtures.collision";
     private static final String ABSTRACT_BASE_FIXTURES =
             "blynx.thymeleaf.compositiondialect.registryfixtures.abstractbase";
+    private static final String PATH_PREFIX_FIXTURES =
+            "blynx.thymeleaf.compositiondialect.registryfixtures.pathprefix";
 
     private ComponentRegistry scan(String prefix) {
         return ComponentRegistry.scan(PACKAGE, "testcomponents", prefix);
@@ -147,5 +151,21 @@ class ComponentRegistryTest {
 
         ComponentDescriptor widget = registry.findByClass(Widget.class).orElseThrow();
         assertEquals("sub-folder/widget", widget.templatePath());
+    }
+
+    @Test
+    void pathPrefixComposesWithASubclassesOwnPath() {
+        ComponentRegistry registry = ComponentRegistry.scan(PATH_PREFIX_FIXTURES, null, "c");
+
+        ComponentDescriptor leaf = registry.findByClass(Leaf.class).orElseThrow();
+        assertEquals("shared/leaf-folder/leaf", leaf.templatePath());
+    }
+
+    @Test
+    void pathPrefixComposesEvenWithoutAnOwnPath() {
+        ComponentRegistry registry = ComponentRegistry.scan(PATH_PREFIX_FIXTURES, null, "c");
+
+        ComponentDescriptor bareLeaf = registry.findByClass(BareLeaf.class).orElseThrow();
+        assertEquals("shared/bare-leaf", bareLeaf.templatePath());
     }
 }
