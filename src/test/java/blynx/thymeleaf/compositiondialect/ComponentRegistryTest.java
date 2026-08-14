@@ -8,12 +8,18 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
+import blynx.thymeleaf.compositiondialect.registryfixtures.abstractbase.BaseThing;
+import blynx.thymeleaf.compositiondialect.registryfixtures.abstractbase.Widget;
 import blynx.thymeleaf.compositiondialect.testcomponents.Card;
 import blynx.thymeleaf.compositiondialect.testcomponents.MagicHeadings;
 
 class ComponentRegistryTest {
 
     private static final String PACKAGE = "blynx.thymeleaf.compositiondialect.testcomponents";
+    private static final String COLLISION_FIXTURES =
+            "blynx.thymeleaf.compositiondialect.registryfixtures.collision";
+    private static final String ABSTRACT_BASE_FIXTURES =
+            "blynx.thymeleaf.compositiondialect.registryfixtures.abstractbase";
 
     private ComponentRegistry scan(String prefix) {
         return ComponentRegistry.scan(PACKAGE, "testcomponents", prefix);
@@ -95,5 +101,51 @@ class ComponentRegistryTest {
         List<ComponentDescriptor> components = scan("c").components();
         org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class,
                 () -> components.add(null));
+    }
+
+    @Test
+    void requireNoCollisionsThrowsWhenTwoClassesShareATagUnderTheSamePrefix() {
+        ComponentRegistry registry = ComponentRegistry.scan(COLLISION_FIXTURES, null, "c");
+
+        IllegalStateException thrown = org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalStateException.class, registry::requireNoCollisions);
+
+        assertTrue(thrown.getMessage().contains("<c:twin> is claimed by"), thrown.getMessage());
+        assertTrue(thrown.getMessage().contains(
+                "blynx.thymeleaf.compositiondialect.registryfixtures.collision.alpha.Twin"), thrown.getMessage());
+        assertTrue(thrown.getMessage().contains(
+                "blynx.thymeleaf.compositiondialect.registryfixtures.collision.bravo.Twin"), thrown.getMessage());
+    }
+
+    @Test
+    void collisionsIsKeyedByQualifiedNameAndListsBothDescriptors() {
+        ComponentRegistry registry = ComponentRegistry.scan(COLLISION_FIXTURES, null, "c");
+
+        assertEquals(List.of("c:twin"), List.copyOf(registry.collisions().keySet()));
+        assertEquals(2, registry.collisions().get("c:twin").size());
+    }
+
+    @Test
+    void scanSkipsAbstractIntermediateBase() {
+        ComponentRegistry registry = ComponentRegistry.scan(ABSTRACT_BASE_FIXTURES, null, "c");
+
+        assertTrue(registry.findByClass(BaseThing.class).isEmpty());
+        assertEquals(1, registry.components().size());
+    }
+
+    @Test
+    void scanStillDiscoversConcreteSubclassOfAbstractBase() {
+        ComponentRegistry registry = ComponentRegistry.scan(ABSTRACT_BASE_FIXTURES, null, "c");
+
+        ComponentDescriptor widget = registry.findByClass(Widget.class).orElseThrow();
+        assertEquals("widget", widget.tagName());
+    }
+
+    @Test
+    void aConcreteSubclassGetsItsOwnPathNotItsAbstractParents() {
+        ComponentRegistry registry = ComponentRegistry.scan(ABSTRACT_BASE_FIXTURES, null, "c");
+
+        ComponentDescriptor widget = registry.findByClass(Widget.class).orElseThrow();
+        assertEquals("sub-folder/widget", widget.templatePath());
     }
 }

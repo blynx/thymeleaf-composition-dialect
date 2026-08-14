@@ -1,5 +1,6 @@
 package blynx.thymeleaf.compositiondialect;
 
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -10,6 +11,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.reflections.Reflections;
 
@@ -44,6 +46,11 @@ public final class ComponentRegistry {
         List<ComponentDescriptor> descriptors = new ArrayList<>();
         for (Class<? extends CompositionComponent> componentClass :
                 new Reflections(componentPackage).getSubTypesOf(CompositionComponent.class)) {
+            // getSubTypesOf is transitive and unfiltered: an abstract intermediate base would otherwise
+            // register like a real component and only fail — as a raw InstantiationError — if rendered.
+            if (Modifier.isAbstract(componentClass.getModifiers())) {
+                continue;
+            }
             String tagName = toTagName(componentClass);
             String templatePath = buildComponentPath(componentsPath, componentClass, tagName);
             descriptors.add(new ComponentDescriptor(componentClass, prefix, tagName, templatePath));
@@ -81,6 +88,42 @@ public final class ComponentRegistry {
      */
     public Map<String, List<ComponentDescriptor>> byTagName() {
         return byTagName;
+    }
+
+    /**
+     * Tags claimed by more than one component class, keyed by {@link ComponentDescriptor#qualifiedName()}
+     * rather than raw tag name — a tag reused across different prefixes is the intentional cross-dialect
+     * substrate {@link #aggregate} supports, not a collision. Immutable; empty when there are none.
+     */
+    public Map<String, List<ComponentDescriptor>> collisions() {
+        Map<String, List<ComponentDescriptor>> byQualifiedName = groupBy(components, ComponentDescriptor::qualifiedName);
+        Map<String, List<ComponentDescriptor>> collisions = new LinkedHashMap<>();
+        byQualifiedName.forEach((qualifiedName, descriptors) -> {
+            if (descriptors.size() > 1) {
+                collisions.put(qualifiedName, descriptors);
+            }
+        });
+        return Collections.unmodifiableMap(collisions);
+    }
+
+    /**
+     * Fails fast if any tag is claimed by more than one component class. Without this, one silently wins
+     * a {@code HashSet} of processors built from the registry and the other becomes permanently
+     * unreachable, with no error at all.
+     */
+    public void requireNoCollisions() {
+        Map<String, List<ComponentDescriptor>> collisions = collisions();
+        if (collisions.isEmpty()) {
+            return;
+        }
+        StringBuilder message = new StringBuilder(CompositionDialect.DIALECT_NAME
+                + ": duplicate component tag(s) detected — each must be unique:\n");
+        collisions.forEach((qualifiedName, descriptors) -> message.append("  <").append(qualifiedName)
+                .append("> is claimed by ")
+                .append(descriptors.stream().map(d -> d.componentClass().getName()).collect(Collectors.joining(", ")))
+                .append("\n"));
+        message.append("Rename the clashing component(s).");
+        throw new IllegalStateException(message.toString());
     }
 
     /** The descriptor for a component class, if it is registered. */

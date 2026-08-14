@@ -42,6 +42,7 @@ public class CompositionDialect extends AbstractProcessorDialect {
                               int processorPrecedence) {
         super(name, prefix, processorPrecedence);
         this.registry = ComponentRegistry.scan(componentPackage, componentsPath, prefix);
+        this.registry.requireNoCollisions();
     }
 
     /** The components this dialect discovered at startup. */
