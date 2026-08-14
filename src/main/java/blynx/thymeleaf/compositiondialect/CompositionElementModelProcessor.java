@@ -69,11 +69,20 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
     // overloads take a JVM-global lock for every tag that lacks the attribute.
     private volatile AttributeName slotAttributeName = null;
 
+    // The standard dialect's prefix is configurable, so th:text/th:utext can only be resolved once we
+    // have an IEngineConfiguration in hand; cached the same way as slotAttributeName above.
+    private volatile StandardTextAttributes standardTextAttributes = null;
+
     /** Events between slot markers; {@code segments.length == slotMarkerNames.length + 1}. */
     private record FragmentInfo(IModel[] segments, String[] slotMarkerNames) {
     }
 
     private record CachedFragment(FragmentInfo info, ICacheEntryValidity validity) {
+    }
+
+    /** The standard dialect's {@code th:text}/{@code th:utext}, resolved under its configured prefix. */
+    private record StandardTextAttributes(AttributeName text, AttributeName utext, String textCompleteName,
+                                          String utextCompleteName, String blockTagName) {
     }
 
     public CompositionElementModelProcessor(String dialectPrefix, ComponentDescriptor descriptor) {
@@ -99,9 +108,18 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
     @Override
     protected void doProcess(ITemplateContext context, IModel tag, IElementModelStructureHandler structureHandler) {
         FragmentInfo fragment = getOrLoadFragment(context);
-        Map<String, IModel> slots = extractSlots(tag, context.getModelFactory(),
-                slotAttributeName(context.getConfiguration()));
-        Map<String, Object> attrs = extractAttrs((IProcessableElementTag) tag.get(0), context);
+        IModelFactory modelFactory = context.getModelFactory();
+        IProcessableElementTag rootElement = (IProcessableElementTag) tag.get(0);
+        StandardTextAttributes textAttrs = standardTextAttributes(context.getConfiguration());
+
+        Map<String, IModel> slots = extractSlots(tag, modelFactory, slotAttributeName(context.getConfiguration()));
+        IModel textShorthand = textShorthandSlotContent(rootElement, textAttrs, modelFactory);
+        if (textShorthand != null) {
+            // th:text/th:utext silently wins over any explicit default-slot children, mirroring th:text's
+            // own "replaces whatever body was there" behavior on a hand-written element.
+            slots.put(CompositionComponent.DEFAULT_SLOT, textShorthand);
+        }
+        Map<String, Object> attrs = extractAttrs(rootElement, context, textAttrs);
 
         CompositionComponentContext componentContext = new CompositionComponentContext(
                 new TrackingAttributes(attrs),
@@ -124,7 +142,7 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
                 context.getVariable(ComponentFrame.VARIABLE) instanceof ComponentFrame frame ? frame : null));
 
         tag.reset();
-        renderFragmentInto(tag, fragment, slots, context.getModelFactory());
+        renderFragmentInto(tag, fragment, slots, modelFactory);
     }
 
     private FragmentInfo getOrLoadFragment(ITemplateContext context) {
@@ -239,13 +257,55 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         return slots;
     }
 
-    private Map<String, Object> extractAttrs(IProcessableElementTag rootElement, ITemplateContext context) {
+    /**
+     * {@code th:text}/{@code th:utext} on the component tag itself, synthesized as the equivalent
+     * hand-written {@code <th:block th:text="...">} and used as the default slot's content — see
+     * docs/reference/slots.md. Built via {@link IModelFactory} (open tag + copy the attribute verbatim +
+     * close tag), so the value is neither parsed nor evaluated here: it rides the normal slot-content path
+     * and {@code th:text} fires on the fresh tag under its own unchanged precedence.
+     *
+     * <p>Returns {@code null} when neither attribute is present, or when the standard dialect isn't
+     * configured at all (in which case neither attribute could mean anything).
+     */
+    private IModel textShorthandSlotContent(IProcessableElementTag rootElement, StandardTextAttributes textAttrs,
+                                            IModelFactory modelFactory) {
+        if (textAttrs == null) {
+            return null;
+        }
+        String text = rootElement.hasAttribute(textAttrs.text()) ? rootElement.getAttributeValue(textAttrs.text()) : null;
+        String utext = rootElement.hasAttribute(textAttrs.utext()) ? rootElement.getAttributeValue(textAttrs.utext()) : null;
+        if (text == null && utext == null) {
+            return null;
+        }
+        // Both present at once: don't validate ourselves, copy both onto the synthetic tag and let the
+        // standard dialect's own precedence resolve it, exactly as it would on a hand-written element.
+        IOpenElementTag block = modelFactory.createOpenElementTag(textAttrs.blockTagName());
+        if (text != null) {
+            block = modelFactory.setAttribute(block, textAttrs.textCompleteName(), text);
+        }
+        if (utext != null) {
+            block = modelFactory.setAttribute(block, textAttrs.utextCompleteName(), utext);
+        }
+        IModel content = modelFactory.createModel();
+        content.add(block);
+        content.add(modelFactory.createCloseElementTag(textAttrs.blockTagName()));
+        return content;
+    }
+
+    private Map<String, Object> extractAttrs(IProcessableElementTag rootElement, ITemplateContext context,
+                                             StandardTextAttributes textAttrs) {
         var allAttributes = rootElement.getAllAttributes();
         Map<String, Object> attrs = HashMap.newHashMap(allAttributes.length);
         var expressionParser = StandardExpressions.getExpressionParser(context.getConfiguration());
         for (var attr : allAttributes) {
-            String plainAttributeName = attr.getAttributeDefinition().getAttributeName().getAttributeName();
-            if (dialectPrefix.equals(attr.getAttributeDefinition().getAttributeName().getPrefix())) {
+            AttributeName attributeName = attr.getAttributeDefinition().getAttributeName();
+            // Already relocated onto the synthetic th:block by textShorthandSlotContent; skip so they
+            // don't also leak into restAttributes/c:rest as unevaluated raw strings.
+            if (textAttrs != null && (attributeName.equals(textAttrs.text()) || attributeName.equals(textAttrs.utext()))) {
+                continue;
+            }
+            String plainAttributeName = attributeName.getAttributeName();
+            if (dialectPrefix.equals(attributeName.getPrefix())) {
                 attrs.put(plainAttributeName,
                         expressionParser.parseExpression(context, attr.getValue()).execute(context));
             } else {
@@ -264,6 +324,32 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
             slotAttributeName = name;
         }
         return name;
+    }
+
+    /**
+     * Resolves {@code th:text}/{@code th:utext} under whatever prefix the standard dialect is actually
+     * configured with, rather than hardcoding {@code "th"}. {@code null} when the standard dialect isn't
+     * present at all.
+     */
+    private StandardTextAttributes standardTextAttributes(IEngineConfiguration configuration) {
+        StandardTextAttributes cached = standardTextAttributes;
+        if (cached != null) {
+            return cached;
+        }
+        String standardPrefix = configuration.getStandardDialectPrefix();
+        if (standardPrefix == null) {
+            return null;
+        }
+        // Benign race, as with slotAttributeName above: every thread resolves the same interned instances.
+        var attributeDefinitions = configuration.getAttributeDefinitions();
+        StandardTextAttributes resolved = new StandardTextAttributes(
+                attributeDefinitions.forName(getTemplateMode(), standardPrefix, "text").getAttributeName(),
+                attributeDefinitions.forName(getTemplateMode(), standardPrefix, "utext").getAttributeName(),
+                standardPrefix + ":text",
+                standardPrefix + ":utext",
+                standardPrefix + ":block");
+        standardTextAttributes = resolved;
+        return resolved;
     }
 
     private static Function<CompositionComponentContext, CompositionComponent> createComponentFactory(

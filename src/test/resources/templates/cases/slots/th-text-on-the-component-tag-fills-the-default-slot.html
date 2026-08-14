@@ -1,0 +1,6 @@
+<!--
+  CASE      th:text on the component tag itself is synthesized as the default slot's content, so a
+            component invocation with only text doesn't need a <th:block> wrapper written out.
+  EXPECT    the evaluated text appears inside the panel
+-->
+<c:panel th:text="${caption}" />

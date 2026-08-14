@@ -15,6 +15,26 @@
 <!-- renders: <button>Click me</button> -->
 ```
 
+## `th:text`/`th:utext` shorthand
+
+`th:text`/`th:utext` on the component tag itself fills its default slot, so a component invocation with
+only text content doesn't need a `<th:block>` wrapper:
+
+```html
+<!-- today, spelled out -->
+<c:button>
+    <th:block th:text="#{catalog.add-to-cart}">Add to cart</th:block>
+</c:button>
+
+<!-- equivalent shorthand -->
+<c:button th:text="#{catalog.add-to-cart}" />
+```
+
+It behaves exactly as `th:text` would on any hand-written element: it silently replaces whatever
+default-slot content was written between the tags, and if both `th:text` and `th:utext` are present at
+once, the standard dialect's own precedence resolves it — this dialect does not add its own validation.
+`th:insert`/`th:replace`/`th:include` are not supported this way.
+
 ## Named slots
 
 Add `c:name` to `<c:slot />` to define named slots. At the call site, assign content to a named slot with the `c:slot` attribute on a direct child element:

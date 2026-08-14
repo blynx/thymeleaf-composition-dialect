@@ -119,3 +119,5 @@ getRestAttributes().forEach((key, value) -> {
 ```
 
 `c:rest` is syntactic sugar over `restAttributes` — it spreads the map onto the element, merging with any static attributes already present (caller wins on conflict).
+
+`th:text`/`th:utext` on the component tag are the one exception: they're never treated as a plain or `c:`-prefixed attribute, so they never appear in `restAttributes` either. See [Slots](slots.md#thtextthutext-shorthand) — they fill the default slot instead.

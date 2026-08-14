@@ -1,0 +1,6 @@
+<!--
+  CASE      th:utext on the component tag works the same way as th:text, but the value lands in the
+            output unescaped rather than as text.
+  EXPECT    the raw markup appears inside the panel, not escaped entities
+-->
+<c:panel th:utext="${'<em>raw</em>'}" />

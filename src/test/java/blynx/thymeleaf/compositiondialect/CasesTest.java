@@ -107,6 +107,25 @@ class CasesTest {
             assertEquals(1, count(out, "<p>two</p>"), out);
             assertFalse(out.contains("dropped"), out);
         }
+
+        @Test
+        void thTextOnTheComponentTagFillsTheDefaultSlot() {
+            assertTrue(render("slots/th-text-on-the-component-tag-fills-the-default-slot").contains(">evaluated<"));
+        }
+
+        @Test
+        void thTextOverridesExplicitDefaultSlotChildren() {
+            String out = render("slots/th-text-overrides-explicit-default-slot-children");
+
+            assertTrue(out.contains(">evaluated<"), out);
+            assertFalse(out.contains("fallback"), out);
+        }
+
+        @Test
+        void thUtextOnTheComponentTagFillsTheDefaultSlotUnescaped() {
+            assertTrue(render("slots/th-utext-on-the-component-tag-fills-the-default-slot-unescaped")
+                    .contains("<em>raw</em>"));
+        }
     }
 
     @Nested
@@ -223,6 +242,14 @@ class CasesTest {
             assertTrue(out.contains("unquoted=\"b\""), out);
             assertTrue(out.contains("data-dashed=\"c\""), out);
             assertTrue(out.contains("valueless"), out);
+        }
+
+        @Test
+        void thTextIsNotSpreadByCRest() {
+            String out = render("attributes/th-text-is-not-spread-by-c-rest");
+
+            assertTrue(out.contains("quoted=\"a\""), out);
+            assertFalse(out.contains("text="), out);
         }
     }
 

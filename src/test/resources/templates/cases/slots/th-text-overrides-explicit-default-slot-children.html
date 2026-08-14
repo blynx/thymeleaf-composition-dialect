@@ -1,0 +1,6 @@
+<!--
+  CASE      th:text together with explicit default-slot children: th:text silently wins, mirroring
+            vanilla th:text's own "replaces whatever body was there" behavior on any ordinary element.
+  EXPECT    the evaluated text appears; the written-out fallback paragraph does not
+-->
+<c:panel th:text="${caption}"><p id="fallback">fallback</p></c:panel>
