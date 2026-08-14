@@ -55,6 +55,7 @@ public class CompositionDialect extends AbstractProcessorDialect {
             processors.add(new CompositionElementModelProcessor(dialectPrefix, descriptor));
         }
         processors.add(new CompositionRestAttributesTagProcessor(dialectPrefix));
+        processors.add(new CompositionCallerProcessor(dialectPrefix));
         return processors;
     }
 }

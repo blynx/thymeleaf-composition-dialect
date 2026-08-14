@@ -1,0 +1,11 @@
+<!--
+  CASE      Both rules at once, on the same markup. The heading accumulates *inward* to the innermost
+            outline it is rendered in; ${this} beside it unwinds *outward* to the page that wrote it.
+  EXPECT    heading-2, and NONE from ${this}
+-->
+<c:outline>
+    <c:outline>
+        <c:heading>deep</c:heading>
+        <em id="written-by" th:text="${this == null ? 'NONE' : this.title}">?</em>
+    </c:outline>
+</c:outline>

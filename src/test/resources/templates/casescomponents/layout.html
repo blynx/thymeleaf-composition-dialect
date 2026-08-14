@@ -1,0 +1,6 @@
+<div id="layout">
+  <header id="layout-header"><c:slot c:name="header" /></header>
+  <main id="layout-main"><c:outline><c:slot /></c:outline></main>
+  <aside id="layout-own">own</aside>
+  <footer id="layout-footer" th:if="${this.hasSlot('footer')}"><c:slot c:name="footer" /></footer>
+</div>

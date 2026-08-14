@@ -1,0 +1,9 @@
+<!--
+  CASE      Two separate children assigned to the same named slot, with default content between them.
+  EXPECT    both header pieces land in the header, in the order written
+-->
+<c:layout title="split">
+    <p c:slot="header" id="head-1">first</p>
+    <p id="body">body</p>
+    <p c:slot="header" id="head-2">second</p>
+</c:layout>

@@ -1,0 +1,7 @@
+<!--
+  CASE      th:if on the component tag itself decides whether it renders. Resolution is static;
+            rendering is not.
+  EXPECT    only the kept panel
+-->
+<c:panel title="dropped" th:if="${false}">dropped</c:panel>
+<c:panel title="kept" th:if="${true}">kept</c:panel>

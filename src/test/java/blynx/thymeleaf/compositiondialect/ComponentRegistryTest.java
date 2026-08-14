@@ -16,7 +16,7 @@ class ComponentRegistryTest {
     private static final String PACKAGE = "blynx.thymeleaf.compositiondialect.testcomponents";
 
     private ComponentRegistry scan(String prefix) {
-        return ComponentRegistry.scan(PACKAGE, "components", prefix);
+        return ComponentRegistry.scan(PACKAGE, "testcomponents", prefix);
     }
 
     @Test
@@ -40,14 +40,14 @@ class ComponentRegistryTest {
         assertEquals(Card.class, card.componentClass());
         assertEquals("c", card.prefix());
         assertEquals("card", card.tagName());
-        assertEquals("components/card", card.templatePath());
+        assertEquals("testcomponents/card", card.templatePath());
         assertEquals("c:card", card.qualifiedName());
     }
 
     @Test
     void templatePathIncludesTagNameForEveryComponent() {
         for (ComponentDescriptor descriptor : scan("c").components()) {
-            assertEquals("components/" + descriptor.tagName(), descriptor.templatePath());
+            assertEquals("testcomponents/" + descriptor.tagName(), descriptor.templatePath());
         }
     }
 

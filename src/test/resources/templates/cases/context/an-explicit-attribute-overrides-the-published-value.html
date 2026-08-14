@@ -1,0 +1,9 @@
+<!--
+  CASE      A published value is a default, not a command: heading.html prefers an explicit `level`
+            attribute over the enclosing outline's.
+  EXPECT    the inherited heading reports 1, the explicit one reports 5
+-->
+<c:outline>
+    <c:heading>inherited</c:heading>
+    <c:heading c:level="${5}">explicit</c:heading>
+</c:outline>

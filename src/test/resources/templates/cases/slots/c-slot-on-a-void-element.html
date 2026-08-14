@@ -1,0 +1,8 @@
+<!--
+  CASE      c:slot binds on a standalone (void) direct child too, not only on one with a body.
+  EXPECT    the image lands in the header, ahead of the body
+-->
+<c:layout title="void">
+    <img c:slot="header" id="picture" src="x.png">
+    <p id="body">body</p>
+</c:layout>

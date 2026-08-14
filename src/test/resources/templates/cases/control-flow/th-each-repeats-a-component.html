@@ -1,0 +1,6 @@
+<!--
+  CASE      th:each on the component tag iterates it, with the loop variable in scope for the
+            c:-prefixed attributes, which are expressions.
+  EXPECT    one panel per item, each stamped with its own title
+-->
+<c:panel c:title="${item}" th:each="item : ${items}">item</c:panel>

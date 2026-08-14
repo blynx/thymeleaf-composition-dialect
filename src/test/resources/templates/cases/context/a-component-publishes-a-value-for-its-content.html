@@ -1,0 +1,10 @@
+<!--
+  CASE      The deliberately dynamic mechanism. outline.html publishes itself; heading.html reports the
+            level of the nearest enclosing one. Unlike ${this}, this follows the rendered nesting.
+  EXPECT    heading-1 outside, heading-1 in one outline, heading-2 in two
+-->
+<c:heading>none</c:heading>
+
+<c:outline><c:heading>one</c:heading>
+    <c:outline><c:heading>two</c:heading></c:outline>
+</c:outline>

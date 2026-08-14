@@ -29,7 +29,7 @@ import org.thymeleaf.model.ITemplateEvent;
 import org.thymeleaf.processor.element.AbstractElementModelProcessor;
 import org.thymeleaf.processor.element.IElementModelStructureHandler;
 import org.thymeleaf.standard.expression.StandardExpressions;
-import org.thymeleaf.standard.processor.StandardReplaceTagProcessor;
+import org.thymeleaf.standard.processor.StandardUnlessTagProcessor;
 import org.thymeleaf.templatemode.TemplateMode;
 
 /**
@@ -39,13 +39,27 @@ import org.thymeleaf.templatemode.TemplateMode;
  */
 public class CompositionElementModelProcessor extends AbstractElementModelProcessor {
 
-    private static final int PRECEDENCE = StandardReplaceTagProcessor.PRECEDENCE;
+    /** The component whose template is rendering, as templates see it. */
+    static final String COMPONENT_VARIABLE = "this";
+
+    /**
+     * Behind every standard processor that decides <em>whether</em> an element exists — {@code th:each}
+     * (200), {@code th:switch}/{@code th:case}, {@code th:if} (300), {@code th:unless} (400) — and ahead of
+     * the ones that fill it in ({@code th:object}, {@code th:with}, {@code th:attr}, {@code th:text}).
+     * Control flow therefore decides whether a component is rendered, and the component then owns the tag.
+     *
+     * <p>Not {@code th:replace}'s own precedence (100), which this used to copy: a processor that replaces
+     * its element ends that element's processing, so at 100 a {@code th:if} on the component tag itself was
+     * silently ignored — as it still is on a {@code th:replace}.
+     */
+    private static final int PRECEDENCE = StandardUnlessTagProcessor.PRECEDENCE + 50;
 
     private final String dialectPrefix;
     private final String elementName;
     private final Class<? extends CompositionComponent> componentClass;
     private final String slotTagName;
     private final String slotNameAttributeName;
+    private final String callerTagName;
     private final String componentPath;
     private final Function<CompositionComponentContext, CompositionComponent> componentFactory;
 
@@ -69,6 +83,7 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         this.componentClass = descriptor.componentClass();
         this.slotTagName = dialectPrefix + ":slot";
         this.slotNameAttributeName = dialectPrefix + ":name";
+        this.callerTagName = dialectPrefix + ":" + CompositionCallerProcessor.TAG_NAME;
         this.componentPath = descriptor.templatePath();
         Constructor<? extends CompositionComponent> componentConstructor;
         try {
@@ -103,10 +118,13 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
             throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME
                     + ": Could not instantiate component \"" + elementName + "\" (" + componentClass.getName() + ")", e);
         }
-        structureHandler.setLocalVariable("this", componentInstance);
+        structureHandler.setLocalVariable(COMPONENT_VARIABLE, componentInstance);
+        // Read before the line above takes effect, so this is the frame the tag was written in.
+        structureHandler.setLocalVariable(ComponentFrame.VARIABLE, new ComponentFrame(componentInstance,
+                context.getVariable(ComponentFrame.VARIABLE) instanceof ComponentFrame frame ? frame : null));
 
         tag.reset();
-        renderFragmentInto(tag, fragment, slots);
+        renderFragmentInto(tag, fragment, slots, context.getModelFactory());
     }
 
     private FragmentInfo getOrLoadFragment(ITemplateContext context) {
@@ -155,7 +173,13 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         return info;
     }
 
-    private void renderFragmentInto(IModel target, FragmentInfo fragment, Map<String, IModel> slots) {
+    /**
+     * Appends the component's segments with the caller's slot content spliced in between them, each piece
+     * of content wrapped in a marker that steps back out of this component — the content was written
+     * outside it and must keep reading the {@code this} that was in effect there.
+     */
+    private void renderFragmentInto(IModel target, FragmentInfo fragment, Map<String, IModel> slots,
+                                    IModelFactory modelFactory) {
         IModel[] segments = fragment.segments();
         String[] slotNames = fragment.slotMarkerNames();
 
@@ -163,7 +187,9 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         for (int i = 0; i < slotNames.length; i++) {
             IModel content = slots.get(slotNames[i]);
             if (content != null) {
+                target.add(modelFactory.createOpenElementTag(callerTagName));
                 target.addModel(content);
+                target.add(modelFactory.createCloseElementTag(callerTagName));
             }
             target.addModel(segments[i + 1]);
         }

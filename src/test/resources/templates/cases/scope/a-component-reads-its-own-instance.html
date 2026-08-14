@@ -1,0 +1,6 @@
+<!--
+  CASE      Inside a component's own template, ${this} is that component.
+            panel.html renders th:attr="data-title=${this.title}".
+  EXPECT    data-title="mine"
+-->
+<c:panel title="mine">body</c:panel>

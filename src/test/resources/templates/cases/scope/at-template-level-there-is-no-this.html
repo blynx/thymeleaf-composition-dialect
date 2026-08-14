@@ -1,0 +1,5 @@
+<!--
+  CASE      A page rendered by a controller is not a component, so there is nothing for ${this} to be.
+  EXPECT    NONE
+-->
+<p id="at-page" th:text="${this == null ? 'NONE' : this.title}">?</p>

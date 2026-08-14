@@ -1,0 +1,6 @@
+<!--
+  CASE      relay.html reads no attributes and carries c:rest, which spreads everything the component
+            did not consume onto that element. Quoting styles and valueless attributes survive.
+  EXPECT    every attribute written here appears on the relay div
+-->
+<c:relay quoted="a" unquoted=b data-dashed="c" valueless />

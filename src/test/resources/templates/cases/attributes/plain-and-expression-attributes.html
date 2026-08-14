@@ -1,0 +1,7 @@
+<!--
+  CASE      A plain attribute is passed as its literal string; a c:-prefixed one is evaluated as an
+            expression first.
+  EXPECT    the literal for one, the evaluated value for the other
+-->
+<c:panel title="literal" />
+<c:panel c:title="${caption}" />

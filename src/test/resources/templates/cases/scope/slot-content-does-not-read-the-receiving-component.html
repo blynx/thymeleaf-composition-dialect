@@ -1,0 +1,14 @@
+<!--
+  CASE      This paragraph is written by the page but rendered inside the panel's subtree. ${this}
+            follows the template the markup was written in, not the component rendering it — so a page
+            cannot reach into the internals of a component it merely nested inside.
+  EXPECT    NONE at every depth, while the panel itself still reads "receiver"
+-->
+<p id="at-page" th:text="${this == null ? 'NONE' : this.title}">?</p>
+
+<c:panel title="receiver">
+    <p id="in-slot" th:text="${this == null ? 'NONE' : this.title}">?</p>
+    <c:panel title="inner">
+        <p id="deeper" th:text="${this == null ? 'NONE' : this.title}">?</p>
+    </c:panel>
+</c:panel>

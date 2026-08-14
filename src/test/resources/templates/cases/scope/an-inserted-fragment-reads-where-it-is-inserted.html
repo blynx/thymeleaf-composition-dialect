@@ -1,0 +1,14 @@
+<!--
+  CASE      An inserted fragment is not slot content, so nothing restores a writer for it: it renders in the
+            context of the position it is inserted into, and ${this} is whatever component is rendering
+            there. Page level has none; slot content has none either, because slot content belongs to its
+            writer; inside a component's own template it is that component.
+  EXPECT    NONE at page level and in slot content, and the inserter's own title inside it
+-->
+<div th:replace="~{cases/scope/an-inserted-fragment-reads-where-it-is-inserted.target :: at-page}"></div>
+
+<c:panel title="host">
+    <div th:replace="~{cases/scope/an-inserted-fragment-reads-where-it-is-inserted.target :: in-slot}"></div>
+</c:panel>
+
+<c:inserter title="inserting" />

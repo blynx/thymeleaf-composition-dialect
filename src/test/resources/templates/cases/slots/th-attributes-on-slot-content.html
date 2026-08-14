@@ -1,0 +1,9 @@
+<!--
+  CASE      Slot content is spliced into the component, so a th: attribute on a top-level element of that
+            content is processed one level inside the machinery that carries it. It must behave as written.
+  EXPECT    one paragraph per item, and the guarded span absent
+-->
+<c:panel title="th-attributes">
+    <p th:each="item : ${items}" th:text="${item}">?</p>
+    <span th:if="${false}" id="dropped">dropped</span>
+</c:panel>

@@ -1,0 +1,6 @@
+<!--
+  CASE      handoff.html puts its own <c:slot /> inside a panel, so content given to it travels one
+            component further before it is rendered.
+  EXPECT    the paragraph ends up inside the panel inside the handoff
+-->
+<c:handoff><p id="travelled">travelled</p></c:handoff>

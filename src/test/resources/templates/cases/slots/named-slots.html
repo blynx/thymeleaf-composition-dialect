@@ -1,0 +1,10 @@
+<!--
+  CASE      c:slot on a direct child assigns that child to a named slot; the rest is the default slot.
+            layout.html declares header, default and footer, in that order.
+  EXPECT    output order is header, then default, then footer — not the order written here
+-->
+<c:layout title="named">
+    <p id="body">written second, rendered second</p>
+    <p c:slot="footer" id="foot">written third, rendered last</p>
+    <p c:slot="header" id="head">written first, rendered first</p>
+</c:layout>

@@ -1,0 +1,11 @@
+<!--
+  CASE      Each component consumes only the c:slot attributes on its own direct children.
+  EXPECT    the outer header holds "outer", the inner layout's header holds "inner"
+-->
+<c:layout title="outer">
+    <p c:slot="header" id="outer-head">outer</p>
+    <c:layout title="inner">
+        <p c:slot="header" id="inner-head">inner</p>
+        <p id="inner-body">inner body</p>
+    </c:layout>
+</c:layout>

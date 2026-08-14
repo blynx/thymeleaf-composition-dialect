@@ -1,0 +1,6 @@
+<!--
+  CASE      A component can ask whether it was given a slot. layout.html renders its footer only
+            when there is footer content: th:if="${this.hasSlot('footer')}".
+  EXPECT    no footer element at all
+-->
+<c:layout title="no footer"><p id="body">body only</p></c:layout>

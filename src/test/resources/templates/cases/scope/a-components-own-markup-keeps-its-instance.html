@@ -1,0 +1,8 @@
+<!--
+  CASE      The other direction: handoff.html writes markup into the panel's slot, and that markup is
+            its own — so it keeps reading the handoff, not the panel that renders it.
+            handoff.html is <div id="handoff"><c:panel title="handoff"><c:slot /></c:panel></div>,
+            and the panel stamps its own title as data-title.
+  EXPECT    data-title="handoff" — set by the panel from the title the handoff passed it
+-->
+<c:handoff><p id="given">given</p></c:handoff>

@@ -27,7 +27,7 @@ class CompositionElementModelProcessorTest {
         componentResolver.setOrder(1);
         componentResolver.setPrefix("templates/");
         componentResolver.setSuffix(".html");
-        componentResolver.setResolvablePatterns(Set.of("components/*"));
+        componentResolver.setResolvablePatterns(Set.of("testcomponents/*"));
         componentResolver.setCharacterEncoding("UTF-8");
 
         StringTemplateResolver pageResolver = new StringTemplateResolver();
@@ -39,7 +39,7 @@ class CompositionElementModelProcessorTest {
         engine.addTemplateResolver(pageResolver);
         engine.addDialect(new CompositionDialect(
                 "blynx.thymeleaf.compositiondialect.testcomponents",
-                "components"));
+                "testcomponents"));
     }
 
     @Test
@@ -210,7 +210,7 @@ class CompositionElementModelProcessorTest {
         componentResolver.setOrder(1);
         componentResolver.setPrefix(templateDir + "/");
         componentResolver.setSuffix(".html");
-        componentResolver.setResolvablePatterns(Set.of("components/*"));
+        componentResolver.setResolvablePatterns(Set.of("testcomponents/*"));
         componentResolver.setCharacterEncoding("UTF-8");
         componentResolver.setCacheable(cacheable);
 
@@ -223,13 +223,13 @@ class CompositionElementModelProcessorTest {
         fileEngine.addTemplateResolver(pageResolver);
         fileEngine.addDialect(new CompositionDialect(
                 "blynx.thymeleaf.compositiondialect.testcomponents",
-                "components"));
+                "testcomponents"));
         return fileEngine;
     }
 
     private void writeWrapperTemplate(Path templateDir, String marker) throws IOException {
-        Files.createDirectories(templateDir.resolve("components"));
-        Files.writeString(templateDir.resolve("components/wrapper.html"),
+        Files.createDirectories(templateDir.resolve("testcomponents"));
+        Files.writeString(templateDir.resolve("testcomponents/wrapper.html"),
                 "<div id=\"" + marker + "\"><c:slot /></div>");
     }
 }

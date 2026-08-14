@@ -1,0 +1,6 @@
+<!--
+  CASE      Like native shadow-DOM slotting, c:slot binds on direct children only. Deeper occurrences
+            are left alone so a nested component invocation can claim them.
+  EXPECT    the deep c:slot attribute survives into the output, and its element stays in the default slot
+-->
+<c:panel title="inert"><div><span c:slot="header" id="deep">deep</span></div></c:panel>
