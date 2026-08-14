@@ -1,0 +1,8 @@
+<!--
+  CASE      A slot's fallback is the component's own markup, not content handed in by a caller, so it must
+            keep reading the component's own ${this} rather than stepping back out to whatever ${this} was
+            in effect where the call site was written — unlike real slot content, a fallback is never
+            wrapped in the caller-frame marker.
+  EXPECT    fallback-scope, not NONE and not any caller value
+-->
+<c:fallback-scope />

@@ -17,15 +17,18 @@ import org.thymeleaf.IEngineConfiguration;
 import org.thymeleaf.cache.ICacheEntryValidity;
 import org.thymeleaf.context.ITemplateContext;
 import org.thymeleaf.engine.AttributeName;
+import org.thymeleaf.engine.ElementName;
 import org.thymeleaf.engine.TemplateModel;
 import org.thymeleaf.exceptions.TemplateProcessingException;
 import org.thymeleaf.model.ICloseElementTag;
+import org.thymeleaf.model.IElementTag;
 import org.thymeleaf.model.IModel;
 import org.thymeleaf.model.IModelFactory;
 import org.thymeleaf.model.IOpenElementTag;
 import org.thymeleaf.model.IProcessableElementTag;
 import org.thymeleaf.model.IStandaloneElementTag;
 import org.thymeleaf.model.ITemplateEvent;
+import org.thymeleaf.model.IText;
 import org.thymeleaf.processor.element.AbstractElementModelProcessor;
 import org.thymeleaf.processor.element.IElementModelStructureHandler;
 import org.thymeleaf.standard.expression.StandardExpressions;
@@ -57,7 +60,6 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
     private final String dialectPrefix;
     private final String elementName;
     private final Class<? extends CompositionComponent> componentClass;
-    private final String slotTagName;
     private final String slotNameAttributeName;
     private final String callerTagName;
     private final String componentPath;
@@ -69,12 +71,22 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
     // overloads take a JVM-global lock for every tag that lacks the attribute.
     private volatile AttributeName slotAttributeName = null;
 
+    // Interned c:slot element name, resolved the same way and for the same reason as slotAttributeName
+    // above. Matching by identity (rather than a raw string compare on getElementCompleteName()) is what
+    // makes <c-slot />/<data-c-slot /> recognized as the same marker as <c:slot />, exactly as c:name and
+    // data-c-name already both work on the attribute side.
+    private volatile ElementName slotElementName = null;
+
     // The standard dialect's prefix is configurable, so th:text/th:utext can only be resolved once we
     // have an IEngineConfiguration in hand; cached the same way as slotAttributeName above.
     private volatile StandardTextAttributes standardTextAttributes = null;
 
-    /** Events between slot markers; {@code segments.length == slotMarkerNames.length + 1}. */
-    private record FragmentInfo(IModel[] segments, String[] slotMarkerNames) {
+    /**
+     * Events between slot markers; {@code segments.length == slotMarkerNames.length + 1}.
+     * {@code fallbacks[i]} holds marker {@code i}'s fallback content when it was written in paired form
+     * ({@code <c:slot>...</c:slot>}), {@code null} when it was self-closing.
+     */
+    private record FragmentInfo(IModel[] segments, String[] slotMarkerNames, IModel[] fallbacks) {
     }
 
     private record CachedFragment(FragmentInfo info, ICacheEntryValidity validity) {
@@ -90,7 +102,6 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         this.dialectPrefix = dialectPrefix;
         this.elementName = descriptor.tagName();
         this.componentClass = descriptor.componentClass();
-        this.slotTagName = dialectPrefix + ":slot";
         this.slotNameAttributeName = dialectPrefix + ":name";
         this.callerTagName = dialectPrefix + ":" + CompositionCallerProcessor.TAG_NAME;
         this.componentPath = descriptor.templatePath();
@@ -113,6 +124,7 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         StandardTextAttributes textAttrs = standardTextAttributes(context.getConfiguration());
 
         Map<String, IModel> slots = extractSlots(tag, modelFactory, slotAttributeName(context.getConfiguration()));
+        removeBlankDefaultSlot(slots);
         IModel textShorthand = textShorthandSlotContent(rootElement, textAttrs, modelFactory);
         if (textShorthand != null) {
             // th:text/th:utext silently wins over any explicit default-slot children, mirroring th:text's
@@ -163,25 +175,38 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
 
         // Pre-split around the slot markers so rendering bulk-copies each segment via addModel.
         IModelFactory modelFactory = context.getModelFactory();
+        ElementName slotElement = slotElementName(context.getConfiguration());
         List<IModel> segments = new ArrayList<>();
         List<String> names = new ArrayList<>();
+        List<IModel> fallbacks = new ArrayList<>();
 
         IModel currentSegment = modelFactory.createModel();
-        for (int i = 1; i < templateModel.size() - 1; i++) {
+        int end = templateModel.size() - 1;
+        for (int i = 1; i < end; i++) {
             ITemplateEvent event = templateModel.get(i);
-            if (event instanceof IStandaloneElementTag standaloneTag
-                    && standaloneTag.getElementCompleteName().equals(slotTagName)) {
-                segments.add(currentSegment);
-                String name = standaloneTag.getAttributeValue(slotNameAttributeName);
-                names.add(name != null ? name : CompositionComponent.DEFAULT_SLOT);
-                currentSegment = modelFactory.createModel();
-            } else {
+            if (!isSlotMarker(event, slotElement)) {
                 currentSegment.add(event);
+                continue;
             }
+            segments.add(currentSegment);
+            names.add(markerSlotName(event));
+            if (event instanceof IStandaloneElementTag) {
+                fallbacks.add(null);
+            } else {
+                int closeAt = matchingCloseIndex(templateModel, i, end, slotElement);
+                IModel fallback = modelFactory.createModel();
+                for (int j = i + 1; j < closeAt; j++) {
+                    fallback.add(templateModel.get(j));
+                }
+                fallbacks.add(fallback);
+                i = closeAt;
+            }
+            currentSegment = modelFactory.createModel();
         }
         segments.add(currentSegment);
 
-        FragmentInfo info = new FragmentInfo(segments.toArray(new IModel[0]), names.toArray(new String[0]));
+        FragmentInfo info = new FragmentInfo(segments.toArray(new IModel[0]), names.toArray(new String[0]),
+                fallbacks.toArray(new IModel[0]));
         // Cache only cacheable templates and re-check validity per hit (dev-mode edits, TTL expiry).
         // Not flushed by TemplateEngine.clearTemplateCaches().
         ICacheEntryValidity validity = templateModel.getTemplateData().getValidity();
@@ -192,14 +217,60 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
     }
 
     /**
+     * Index of the close tag pairing with the open marker at {@code openAt}, found by tracking generic
+     * open/close nesting depth from 1 — the same balanced-bracket technique as any other tag-matching,
+     * regardless of what the nested markup is. Standalone tags in between don't affect depth; another
+     * {@code c:slot} marker found while scanning is rejected outright, since native {@code <slot>} permits
+     * a fallback to contain another slot but our marker recognition has no notion of nesting depth to
+     * resolve that safely.
+     */
+    private int matchingCloseIndex(TemplateModel templateModel, int openAt, int end, ElementName slotElement) {
+        int depth = 1;
+        for (int j = openAt + 1; j < end; j++) {
+            ITemplateEvent event = templateModel.get(j);
+            if (isSlotMarker(event, slotElement)) {
+                throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME
+                        + ": <" + dialectPrefix + ":slot> found inside another slot's fallback content, in "
+                        + "component \"" + elementName + "\" (" + componentPath + ".html) — a slot's fallback "
+                        + "content may not itself contain another slot marker.");
+            }
+            if (event instanceof IOpenElementTag) {
+                depth++;
+            } else if (event instanceof ICloseElementTag) {
+                depth--;
+                if (depth == 0) {
+                    return j;
+                }
+            }
+        }
+        throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME
+                + ": <" + dialectPrefix + ":slot> in component \"" + elementName + "\" (" + componentPath
+                + ".html) is never closed.");
+    }
+
+    /** Whether {@code event} is a {@code c:slot} marker's own open or standalone tag — never its close tag. */
+    private boolean isSlotMarker(ITemplateEvent event, ElementName slotElement) {
+        return (event instanceof IStandaloneElementTag || event instanceof IOpenElementTag)
+                && ((IElementTag) event).getElementDefinition().getElementName().equals(slotElement);
+    }
+
+    private String markerSlotName(ITemplateEvent event) {
+        String name = ((IProcessableElementTag) event).getAttributeValue(slotNameAttributeName);
+        return name != null ? name : CompositionComponent.DEFAULT_SLOT;
+    }
+
+    /**
      * Appends the component's segments with the caller's slot content spliced in between them, each piece
      * of content wrapped in a marker that steps back out of this component — the content was written
-     * outside it and must keep reading the {@code this} that was in effect there.
+     * outside it and must keep reading the {@code this} that was in effect there. A slot the caller left
+     * empty falls back to its own fallback content, if it has any — added unwrapped, since a fallback is
+     * the component's own markup and must keep reading this component's {@code this}, not step back out.
      */
     private void renderFragmentInto(IModel target, FragmentInfo fragment, Map<String, IModel> slots,
                                     IModelFactory modelFactory) {
         IModel[] segments = fragment.segments();
         String[] slotNames = fragment.slotMarkerNames();
+        IModel[] fallbacks = fragment.fallbacks();
 
         target.addModel(segments[0]);
         for (int i = 0; i < slotNames.length; i++) {
@@ -208,6 +279,8 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
                 target.add(modelFactory.createOpenElementTag(callerTagName));
                 target.addModel(content);
                 target.add(modelFactory.createCloseElementTag(callerTagName));
+            } else if (fallbacks[i] != null) {
+                target.addModel(fallbacks[i]);
             }
             target.addModel(segments[i + 1]);
         }
@@ -255,6 +328,28 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
             }
         }
         return slots;
+    }
+
+    /**
+     * Whitespace-only default-slot content (e.g. just the indentation between a component's tags) is
+     * treated as if the caller passed nothing at all — deviating from native {@code <slot>}, where a bare
+     * text node still counts as content and silently defeats a default-slot fallback. Named slots are never
+     * affected: only an element can carry {@code c:slot}, and a bare text node cannot.
+     */
+    private void removeBlankDefaultSlot(Map<String, IModel> slots) {
+        IModel defaultSlot = slots.get(CompositionComponent.DEFAULT_SLOT);
+        if (defaultSlot != null && isBlank(defaultSlot)) {
+            slots.remove(CompositionComponent.DEFAULT_SLOT);
+        }
+    }
+
+    private static boolean isBlank(IModel model) {
+        for (int i = 0; i < model.size(); i++) {
+            if (!(model.get(i) instanceof IText text) || !text.getText().isBlank()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -322,6 +417,17 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
             name = configuration.getAttributeDefinitions()
                     .forName(getTemplateMode(), dialectPrefix, "slot").getAttributeName();
             slotAttributeName = name;
+        }
+        return name;
+    }
+
+    private ElementName slotElementName(IEngineConfiguration configuration) {
+        ElementName name = slotElementName;
+        if (name == null) {
+            // Benign race, as with slotAttributeName above: every thread resolves the same interned instance.
+            name = configuration.getElementDefinitions()
+                    .forName(getTemplateMode(), dialectPrefix, "slot").getElementName();
+            slotElementName = name;
         }
         return name;
     }

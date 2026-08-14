@@ -6,6 +6,7 @@ import java.util.Set;
 import org.thymeleaf.dialect.AbstractProcessorDialect;
 import org.thymeleaf.processor.IProcessor;
 import org.thymeleaf.standard.StandardDialect;
+import org.thymeleaf.templatemode.TemplateMode;
 
 /**
  * Thymeleaf dialect that registers one element processor per {@link CompositionComponent}
@@ -56,6 +57,8 @@ public class CompositionDialect extends AbstractProcessorDialect {
         }
         processors.add(new CompositionRestAttributesTagProcessor(dialectPrefix));
         processors.add(new CompositionCallerProcessor(dialectPrefix));
+        processors.add(new CompositionSlotPlacementProcessor(TemplateMode.HTML, dialectPrefix));
+        processors.add(new CompositionSlotPlacementProcessor(TemplateMode.XML, dialectPrefix));
         return processors;
     }
 }

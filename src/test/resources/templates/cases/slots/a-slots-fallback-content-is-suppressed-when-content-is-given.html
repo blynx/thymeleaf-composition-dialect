@@ -1,0 +1,6 @@
+<!--
+  CASE      Content the caller gives for a slot suppresses that slot's fallback, for a named slot and the
+            default slot alike.
+  EXPECT    the caller's content appears; neither fallback does
+-->
+<c:card><span c:slot="header">Given header</span>Given body</c:card>

@@ -1,0 +1,7 @@
+<!--
+  CASE      <c:slot /> written in a caller template — not inside any component's own template — is not a
+            marker at all. The catch-all placement processor rejects it instead of silently printing it,
+            which is what happened before this processor existed.
+  EXPECT    an error
+-->
+<p><c:slot /></p>

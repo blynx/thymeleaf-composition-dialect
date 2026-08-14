@@ -1,0 +1,8 @@
+<!--
+  CASE      <c:slot>fallback</c:slot> renders its fallback content when the caller passes nothing for
+            that slot, for a named slot and the default slot alike, the way native <slot> and Vue slots
+            both do. A paired marker with no fallback at all (the footer here) renders nothing rather
+            than leftover markup.
+  EXPECT    "Untitled" in the header, "Empty" in the body, the footer completely empty
+-->
+<c:card />

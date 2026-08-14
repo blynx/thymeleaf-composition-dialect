@@ -1,0 +1,8 @@
+<!--
+  CASE      The component's own template spells its marker <c-slot /> (dash form) rather than <c:slot />.
+            Recognizing the marker by identity rather than a raw string compare — the same way c:name and
+            data-c-name already both work for the slot-name attribute — picks this up as a side effect,
+            not a feature that needed its own support.
+  EXPECT    the given content lands inside; no leftover "c-slot" text anywhere
+-->
+<c:dash-spelled-slot>given</c:dash-spelled-slot>

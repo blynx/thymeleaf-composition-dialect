@@ -15,6 +15,32 @@
 <!-- renders: <button>Click me</button> -->
 ```
 
+## Fallback content
+
+Content written between the marker's own tags renders when the caller passes nothing for that slot — for a named slot or the default slot alike:
+
+```html
+<!-- card.html -->
+<div class="card">
+    <header><c:slot c:name="header">Untitled</c:slot></header>
+    <main><c:slot>Nothing here yet.</c:slot></main>
+</div>
+```
+
+```html
+<c:card />
+<!-- renders: <div class="card"><header>Untitled</header><main>Nothing here yet.</main></div> -->
+
+<c:card><h2 c:slot="header">Title</h2></c:card>
+<!-- renders: <div class="card"><header>Title</header><main>Nothing here yet.</main></div> -->
+```
+
+A marker with no fallback content (`<c:slot></c:slot>`) renders nothing when the caller passes nothing, rather than leftover markup.
+
+Whitespace-only default-slot content — e.g. just the indentation between a component's tags — is treated as if nothing were passed, so the fallback still shows. This deliberately deviates from the native `<slot>` element, where a bare text node still counts as content and silently defeats a default-slot fallback. Only the default slot is affected this way: a named slot can never end up whitespace-only, since only an element can carry `c:slot`.
+
+A slot's fallback content may not itself contain another `c:slot` marker — that is rejected as an error, unlike native `<slot>`, which permits it.
+
 ## `th:text`/`th:utext` shorthand
 
 `th:text`/`th:utext` on the component tag itself fills its default slot, so a component invocation with
@@ -93,3 +119,5 @@ public class Card extends CompositionComponent {
 
 - `hasSlot()` — checks the default slot
 - `hasSlot("name")` — checks a named slot
+
+`hasSlot()` (no-arg) agrees with fallback rendering about whitespace: indentation alone between a component's tags does not count as content, so it returns `false` there rather than `true` for a caller who passed nothing meaningful. `hasSlot("name")` is never affected, since a named slot can never end up whitespace-only.

@@ -1,0 +1,7 @@
+<!--
+  CASE      A slot's fallback content may not itself contain another c:slot marker. Native <slot> permits
+            this, but our marker-scanning has no notion of nesting depth to resolve it safely, so it is
+            rejected outright rather than silently doing the wrong thing.
+  EXPECT    an error, naming the problem
+-->
+<c:nested-slot-fallback />

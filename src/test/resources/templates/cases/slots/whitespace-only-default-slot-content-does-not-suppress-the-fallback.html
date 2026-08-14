@@ -1,0 +1,11 @@
+<!--
+  CASE      Indentation alone between a component's tags is a real text node natively, and would defeat a
+            default-slot fallback in a browser. We deviate from native and treat whitespace-only
+            default-slot content as if nothing were passed, so an indented call site doesn't silently
+            lose the fallback — and hasSlot() agrees, reporting false rather than "yes, given" for the
+            same whitespace. A named slot given real content (the header here) is unaffected either way.
+  EXPECT    the body's fallback still renders; data-has-body is "false"
+-->
+<c:card>
+    <span c:slot="header">Given header</span>
+</c:card>

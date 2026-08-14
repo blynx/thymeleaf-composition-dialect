@@ -2,6 +2,7 @@ package blynx.thymeleaf.compositiondialect;
 
 import static blynx.thymeleaf.compositiondialect.CaseRenderer.at;
 import static blynx.thymeleaf.compositiondialect.CaseRenderer.count;
+import static blynx.thymeleaf.compositiondialect.CaseRenderer.failureOf;
 import static blynx.thymeleaf.compositiondialect.CaseRenderer.render;
 import static blynx.thymeleaf.compositiondialect.CaseRenderer.textOf;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -126,6 +127,58 @@ class CasesTest {
             assertTrue(render("slots/th-utext-on-the-component-tag-fills-the-default-slot-unescaped")
                     .contains("<em>raw</em>"));
         }
+
+        @Test
+        void aSlotsFallbackContentRendersWhenNothingIsPassed() {
+            String out = render("slots/a-slots-fallback-content-renders-when-nothing-is-passed");
+
+            assertTrue(out.contains(">Untitled<"), out);
+            assertTrue(out.contains(">Empty<"), out);
+            assertTrue(out.contains("data-has-body=\"false\""), out);
+            assertTrue(out.contains("<footer id=\"card-footer\"></footer>"), out);
+        }
+
+        @Test
+        void aSlotsFallbackContentIsSuppressedWhenContentIsGiven() {
+            String out = render("slots/a-slots-fallback-content-is-suppressed-when-content-is-given");
+
+            assertFalse(out.contains("Untitled"), out);
+            assertFalse(out.contains("Empty"), out);
+            assertTrue(out.contains("Given header"), out);
+            assertTrue(out.contains("Given body"), out);
+            assertTrue(out.contains("data-has-body=\"true\""), out);
+        }
+
+        @Test
+        void whitespaceOnlyDefaultSlotContentDoesNotSuppressTheFallback() {
+            String out = render("slots/whitespace-only-default-slot-content-does-not-suppress-the-fallback");
+
+            assertTrue(out.contains(">Empty<"), out);
+            assertTrue(out.contains("data-has-body=\"false\""), out);
+            assertTrue(out.contains("Given header"), out);
+        }
+
+        @Test
+        void aMarkerSpelledWithADashIsRecognizedToo() {
+            String out = render("slots/a-marker-spelled-with-a-dash-is-recognized-too");
+
+            assertTrue(out.contains("given"), out);
+            assertFalse(out.contains("c-slot"), out);
+        }
+
+        @Test
+        void aNestedCSlotInsideAFallbackIsRejected() {
+            String message = failureOf("slots/a-nested-c-slot-inside-a-fallback-is-rejected");
+
+            assertTrue(message.contains("fallback"), message);
+        }
+
+        @Test
+        void cSlotOutsideAComponentTemplateFails() {
+            String message = failureOf("slots/c-slot-outside-a-component-template-fails");
+
+            assertTrue(message.contains("slot"), message);
+        }
     }
 
     @Nested
@@ -167,6 +220,12 @@ class CasesTest {
             assertEquals("NONE", textOf(out, "at-page"), out);
             assertEquals("NONE", textOf(out, "in-slot"), out);
             assertEquals("inserting", textOf(out, "in-inserter"), out);
+        }
+
+        @Test
+        void aFallbackReadsTheComponentsOwnThis() {
+            assertEquals("fallback-scope", textOf(render("scope/a-fallback-reads-the-components-own-this"),
+                    "in-fallback"));
         }
     }
 
