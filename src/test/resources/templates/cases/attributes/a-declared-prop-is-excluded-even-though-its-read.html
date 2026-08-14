@@ -1,0 +1,7 @@
+<!--
+  CASE      "variant" is declared in props and excluded from c:rest despite being read. "type" is read
+            too, but not declared, so it still spreads — reading an attribute no longer by itself
+            suppresses it. "disabled" is never touched at all and spreads exactly as before.
+  EXPECT    variant becomes the class; type and disabled both appear as plain attributes
+-->
+<c:button variant="danger" type="submit" disabled="true">Delete</c:button>

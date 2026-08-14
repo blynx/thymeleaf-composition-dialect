@@ -310,6 +310,16 @@ class CasesTest {
             assertTrue(out.contains("quoted=\"a\""), out);
             assertFalse(out.contains("text="), out);
         }
+
+        @Test
+        void aDeclaredPropIsExcludedEvenThoughItsRead() {
+            String out = render("attributes/a-declared-prop-is-excluded-even-though-its-read");
+
+            assertTrue(out.contains("class=\"btn-danger\""), out);
+            assertTrue(out.contains("type=\"submit\""), out);
+            assertTrue(out.contains("disabled=\"true\""), out);
+            assertFalse(out.contains("variant"), out);
+        }
     }
 
     /**

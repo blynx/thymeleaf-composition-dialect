@@ -14,7 +14,7 @@ import java.util.function.Function;
  */
 public final class CompositionComponentContext {
 
-    private final TrackingAttributes attributes;
+    private final ComponentAttributes attributes;
     private final Set<String> slotNames;
     private final Locale locale;
     private final BiFunction<String, Object[], String> messageResolver;
@@ -22,7 +22,7 @@ public final class CompositionComponentContext {
     private final BiConsumer<String, Object> variableWriter;
 
     public CompositionComponentContext(
-            TrackingAttributes attributes,
+            ComponentAttributes attributes,
             Set<String> slotNames,
             Locale locale,
             BiFunction<String, Object[], String> messageResolver,
@@ -36,7 +36,7 @@ public final class CompositionComponentContext {
         this.variableWriter = variableWriter;
     }
 
-    public TrackingAttributes attributes() {
+    public ComponentAttributes attributes() {
         return attributes;
     }
 

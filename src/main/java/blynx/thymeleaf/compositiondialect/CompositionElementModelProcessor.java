@@ -63,6 +63,7 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
     private final String slotNameAttributeName;
     private final String callerTagName;
     private final String componentPath;
+    private final Set<String> props;
     private final Function<CompositionComponentContext, CompositionComponent> componentFactory;
 
     private volatile CachedFragment cachedFragment = null;
@@ -105,6 +106,7 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         this.slotNameAttributeName = dialectPrefix + ":name";
         this.callerTagName = dialectPrefix + ":" + CompositionCallerProcessor.TAG_NAME;
         this.componentPath = descriptor.templatePath();
+        this.props = descriptor.props();
         Constructor<? extends CompositionComponent> componentConstructor;
         try {
             componentConstructor = componentClass.getConstructor(CompositionComponentContext.class);
@@ -134,7 +136,7 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         Map<String, Object> attrs = extractAttrs(rootElement, context, textAttrs);
 
         CompositionComponentContext componentContext = new CompositionComponentContext(
-                new TrackingAttributes(attrs),
+                new ComponentAttributes(attrs, props),
                 slots.keySet(),
                 context.getLocale(),
                 (code, params) -> context.getMessage(CompositionElementModelProcessor.class, code, params, false),

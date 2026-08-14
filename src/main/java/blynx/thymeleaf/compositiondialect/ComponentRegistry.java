@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -53,7 +54,8 @@ public final class ComponentRegistry {
             }
             String tagName = toTagName(componentClass);
             String templatePath = buildComponentPath(componentsPath, componentClass, tagName);
-            descriptors.add(new ComponentDescriptor(componentClass, prefix, tagName, templatePath));
+            Set<String> props = readDeclaredProps(componentClass);
+            descriptors.add(new ComponentDescriptor(componentClass, prefix, tagName, templatePath, props));
         }
         return new ComponentRegistry(descriptors);
     }
@@ -176,6 +178,18 @@ public final class ComponentRegistry {
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException(CompositionDialect.DIALECT_NAME
                     + ": Could not read the static \"" + fieldName + "\" field of component " + componentClass.getName(), e);
+        }
+    }
+
+    /** The component's declared {@code props} — resolved once here so it is introspectable without rendering. */
+    private static Set<String> readDeclaredProps(Class<? extends CompositionComponent> componentClass) {
+        try {
+            @SuppressWarnings("unchecked")
+            Set<String> declared = (Set<String>) componentClass.getField("props").get(componentClass);
+            return declared;
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(CompositionDialect.DIALECT_NAME
+                    + ": Could not read the static \"props\" field of component " + componentClass.getName(), e);
         }
     }
 

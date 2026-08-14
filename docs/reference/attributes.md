@@ -27,13 +27,36 @@ public class Button extends CompositionComponent {
 }
 ```
 
-## Attribute defaults
+## Declaring props
 
-**Default in the component class — consumed and applied explicitly:**
-
-Read the attribute in the constructor with an explicit fallback. The attribute is consumed (will not appear in `restAttributes`) and applied explicitly in the template:
+A component declares the attributes that belong to it — as opposed to the caller's own HTML attributes — by listing them in a static `props` field, by their plain name — `"variant"`, whether the caller wrote `variant="..."` or `c:variant="..."`:
 
 ```java
+public static final Set<String> props = Set.of("variant");
+```
+
+Declaring `props` is what excludes an attribute from `restAttributes`/`c:rest` — not reading it. A component can read an attribute to validate, log, or derive from it without declaring it, and it still flows through to `c:rest` like any attribute the component never touches:
+
+```java
+// "type" is read here only to validate it — not declared in props, so it still
+// reaches c:rest, exactly like an attribute the component never touches at all.
+Object rawType = context.attributes().get("type");
+if (rawType != null && !Set.of("button", "submit", "reset").contains(rawType.toString())) {
+    throw new IllegalArgumentException("unknown button type: " + rawType);
+}
+```
+
+This also means what a component accepts is knowable from its declaration alone, without rendering it.
+
+## Attribute defaults
+
+**Default in the component class — declared as a prop and applied explicitly:**
+
+Declare the attribute in `props` so it's excluded from `restAttributes`. If the template needs the value itself — building a CSS class, say — read it in the constructor with an explicit fallback, e.g.:
+
+```java
+public static final Set<String> props = Set.of("variant");
+
 Object raw = context.attributes().get("variant");
 this.variant = raw != null ? raw.toString() : "primary";
 ```
@@ -44,7 +67,7 @@ this.variant = raw != null ? raw.toString() : "primary";
 
 **Default in the template — overridable by the caller:**
 
-For raw HTML attributes where you want a sensible default but the caller should be able to override, put the default as a static attribute in the template and do not consume it in the class. `c:rest` overrides static attributes when the caller passes the same key:
+For raw HTML attributes where you want a sensible default but the caller should be able to override, put the default as a static attribute in the template and do not declare it in `props`. `c:rest` overrides static attributes when the caller passes the same key:
 
 ```html
 <button type="button" c:rest>
@@ -59,19 +82,19 @@ For raw HTML attributes where you want a sensible default but the caller should 
 
 ## Rest attributes
 
-The dialect tracks which attributes have been accessed via `context.attributes().get("key")`. Any attribute not accessed is considered _unconsumed_.
-
-`restAttributes` exposes the unconsumed attributes as a map:
+`restAttributes` exposes every attribute the caller passed that isn't declared in `props`, as a map:
 
 ```java
 public class Button extends CompositionComponent {
+    public static final Set<String> props = Set.of("variant");
+
     private final String variant;
 
     public Button(CompositionComponentContext context) {
         super(context);
         Object raw = context.attributes().get("variant");
         this.variant = raw != null ? raw.toString() : "primary";
-        // variant is consumed — type, disabled, and anything else the caller passes are not
+        // variant is declared in props — type, disabled, and anything else the caller passes are not
     }
 
     public String getVariant() {
@@ -82,7 +105,7 @@ public class Button extends CompositionComponent {
 
 ### `c:rest` — spread onto an element
 
-Place `c:rest` on any element in a component template to spread all unconsumed attributes onto that element:
+Place `c:rest` on any element in a component template to spread every attribute not declared in `props` onto that element:
 
 ```html
 <!-- button.html -->
@@ -97,14 +120,15 @@ Place `c:rest` on any element in a component template to spread all unconsumed a
 <!-- renders: <button class="btn-danger" type="submit" disabled="true">Delete</button> -->
 ```
 
-`variant` was consumed in the constructor. `type` and `disabled` were not, so they pass through to the element.
+`variant` is declared in `props`. `type` and `disabled` are not, so they pass through to the element —
+whether or not the constructor happens to read them.
 
 ### `restAttributes` — access programmatically
 
 `restAttributes` is also available directly in the template or the component class:
 
 ```html
-<!-- iterate unconsumed attributes manually -->
+<!-- iterate the rest attributes manually -->
 <div th:each="attr : ${this.restAttributes}" th:attr="${attr.key}=${attr.value}">
 ```
 

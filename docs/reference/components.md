@@ -19,10 +19,14 @@ Extend `CompositionComponent` and declare a constructor that takes `CompositionC
 ```java
 package com.example.demo.components;
 
+import java.util.Set;
+
 import blynx.thymeleaf.compositiondialect.CompositionComponent;
 import blynx.thymeleaf.compositiondialect.CompositionComponentContext;
 
 public class Button extends CompositionComponent {
+    public static final Set<String> props = Set.of("variant");
+
     private final String variant;
 
     public Button(CompositionComponentContext context) {
@@ -37,7 +41,7 @@ public class Button extends CompositionComponent {
 }
 ```
 
-The component instance is available in its template as `${this}`, and its public getters are reachable as properties — `${this.variant}` resolves to `getVariant()`.
+The component instance is available in its template as `${this}`, and its public getters are reachable as properties — `${this.variant}` resolves to `getVariant()`. See [Attributes](attributes.md) for what `props` declares.
 
 ## Component template
 
@@ -105,5 +109,5 @@ still gets `pathPrefix` alone, e.g. `components/forms/text-field.html`.
 
 ## Context
 
-See [Attributes](attributes.md) for how attributes are passed and consumed.
+See [Attributes](attributes.md) for how attributes are passed, declared as props, and read.
 See [Context](context.md) for locale, messages, and variable scope.
