@@ -44,7 +44,7 @@ public class CompositionDialectAutoConfiguration {
         // Absent when the application has no components of its own and only imports libraries, which is a
         // perfectly ordinary way to use a design system.
         if (properties.componentPackage() != null && !properties.componentPackage().isBlank()) {
-            sources.add(new ComponentSource(properties.componentPackage(), properties.componentsPath()));
+            sources.add(new ComponentSource(properties.componentPackage(), properties.templatesPath()));
         }
         librarySources.orderedStream().forEach(sources::add);
         if (sources.isEmpty()) {

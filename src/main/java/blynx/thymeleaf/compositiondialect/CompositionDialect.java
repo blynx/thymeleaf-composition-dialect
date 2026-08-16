@@ -34,21 +34,21 @@ public class CompositionDialect extends AbstractProcessorDialect {
         this(componentPackage, null);
     }
 
-    public CompositionDialect(String componentPackage, String componentsPath) {
-        this(componentPackage, componentsPath, DIALECT_NAME);
+    public CompositionDialect(String componentPackage, String templatesPath) {
+        this(componentPackage, templatesPath, DIALECT_NAME);
     }
 
-    public CompositionDialect(String componentPackage, String componentsPath, String name) {
-        this(componentPackage, componentsPath, name, DIALECT_PREFIX);
+    public CompositionDialect(String componentPackage, String templatesPath, String name) {
+        this(componentPackage, templatesPath, name, DIALECT_PREFIX);
     }
 
-    public CompositionDialect(String componentPackage, String componentsPath, String name, String prefix) {
-        this(componentPackage, componentsPath, name, prefix, StandardDialect.PROCESSOR_PRECEDENCE);
+    public CompositionDialect(String componentPackage, String templatesPath, String name, String prefix) {
+        this(componentPackage, templatesPath, name, prefix, StandardDialect.PROCESSOR_PRECEDENCE);
     }
 
-    public CompositionDialect(String componentPackage, String componentsPath, String name, String prefix,
+    public CompositionDialect(String componentPackage, String templatesPath, String name, String prefix,
                               int processorPrecedence) {
-        this(List.of(new ComponentSource(componentPackage, componentsPath)), name, prefix, processorPrecedence);
+        this(List.of(new ComponentSource(componentPackage, templatesPath)), name, prefix, processorPrecedence);
     }
 
     /** Every given source, under the default name and prefix. */

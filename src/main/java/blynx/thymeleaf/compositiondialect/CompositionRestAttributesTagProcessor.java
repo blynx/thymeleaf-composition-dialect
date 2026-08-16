@@ -25,7 +25,7 @@ public class CompositionRestAttributesTagProcessor extends AbstractAttributeTagP
         if (!(context.getVariable("this") instanceof CompositionComponent component)) {
             return;
         }
-        component.getRestAttributes().forEach((key, value) ->
+        component.restAttributes().forEach((key, value) ->
                 structureHandler.setAttribute(key, value != null ? value.toString() : ""));
     }
 }

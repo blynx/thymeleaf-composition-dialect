@@ -178,7 +178,7 @@ not the component reads them.
 ```java
 // access in the class
 Map<String, Object> dataAttrs = new HashMap<>();
-getRestAttributes().forEach((key, value) -> {
+restAttributes().forEach((key, value) -> {
     if (key.startsWith("data-")) {
         dataAttrs.put(key, value);
     }

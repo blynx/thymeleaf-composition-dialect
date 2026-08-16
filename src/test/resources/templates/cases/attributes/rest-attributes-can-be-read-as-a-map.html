@@ -1,0 +1,9 @@
+<!--
+  CASE      c:rest is sugar over restAttributes, and a template may read that map itself instead —
+            the documented alternative. This is the only place the accessor is named rather than
+            called by the dialect's own c:rest processor, so it is what pins the name down: rename
+            the method and every c:rest case still passes while this one stops resolving.
+            Declared props are excluded from the map just as they are from c:rest.
+  EXPECT    one entry per attribute the caller passed that is not a declared prop; no "title" among them
+-->
+<c:rest-reader title="mine" data-kept="a" hidden="b" />

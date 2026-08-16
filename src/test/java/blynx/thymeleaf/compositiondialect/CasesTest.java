@@ -355,6 +355,16 @@ class CasesTest {
         }
 
         @Test
+        void restAttributesCanBeReadAsAMap() {
+            String out = render("attributes/rest-attributes-can-be-read-as-a-map");
+
+            assertTrue(out.contains("data-kept=a"), out);
+            assertTrue(out.contains("hidden=b"), out);
+            assertFalse(out.contains("title"), out);
+            assertEquals(2, count(out, "<li"), out);
+        }
+
+        @Test
         void thTextIsNotSpreadByCRest() {
             String out = render("attributes/th-text-is-not-spread-by-c-rest");
 

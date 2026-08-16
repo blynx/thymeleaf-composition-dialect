@@ -8,7 +8,7 @@ import java.lang.annotation.Target;
 /**
  * Declares a field as one of a component's props — the attributes it consumes as its own, as opposed to
  * the caller's own HTML attributes. Declaring a field this way is what excludes it from
- * {@link CompositionComponent#getRestAttributes()}/{@code c:rest} — not reading it.
+ * {@link CompositionComponent#restAttributes()}/{@code c:rest} — not reading it.
  *
  * <p>Only meaningful on a class-based component: a record's components are its props already, one-to-one,
  * with no annotation needed — see {@link ComponentRegistry}. Placed on a record component instead, this

@@ -5,13 +5,14 @@ plugins {
 }
 
 group = 'blynx.thymeleaf'
-version = '0.13.0'
+version = '0.14.0'
 
 repositories {
     mavenCentral()
 }
 
 def thymeleafVersion = '3.1.5.RELEASE'
+def springBootVersion = '3.5.0'
 
 dependencies {
     implementation 'org.reflections:reflections:0.10.2'
@@ -20,11 +21,19 @@ dependencies {
     // decides the Thymeleaf version. Pulling one along would let a component library drag a conflicting
     // Thymeleaf into an application that already has its own.
     compileOnly "org.thymeleaf:thymeleaf:$thymeleafVersion"
-    compileOnly 'org.springframework.boot:spring-boot-autoconfigure:3.5.0'
+    compileOnly "org.springframework.boot:spring-boot-autoconfigure:$springBootVersion"
 
     testImplementation "org.thymeleaf:thymeleaf:$thymeleafVersion"
     testImplementation 'org.junit.jupiter:junit-jupiter:5.14.4'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // The auto-configuration is compiled against Spring but would otherwise never be run. Property names
+    // are matched by relaxed binding at runtime, so a wrong one fails silently at startup rather than at
+    // compile time — ApplicationContextRunner is what turns that into a test failure. AssertJ comes with
+    // spring-boot-test's AssertableApplicationContext; assertions here stay JUnit's, as elsewhere.
+    testImplementation "org.springframework.boot:spring-boot-autoconfigure:$springBootVersion"
+    testImplementation "org.springframework.boot:spring-boot-test:$springBootVersion"
+    testImplementation 'org.assertj:assertj-core:3.27.6'
 }
 
 java {

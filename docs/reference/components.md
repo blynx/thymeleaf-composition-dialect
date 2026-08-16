@@ -72,7 +72,7 @@ are declared and coerced.
 
 ## Component template
 
-Place the template at `{componentsPath}/{kebab-case-name}.html`:
+Place the template at `{templatesPath}/{kebab-case-name}.html`:
 
 ```html
 <!-- templates/components/button.html -->

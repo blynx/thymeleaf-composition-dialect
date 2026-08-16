@@ -19,7 +19,7 @@ public interface CompositionComponent {
     /** This component occurrence's context — attributes, slot names, locale, messages, variables. */
     CompositionComponentContext context();
 
-    default Map<String, Object> getRestAttributes() {
+    default Map<String, Object> restAttributes() {
         return context().attributes().rest();
     }
 

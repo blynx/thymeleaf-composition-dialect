@@ -19,7 +19,7 @@ package blynx.thymeleaf.compositiondialect;
  * {@code <c:ds-button>}. Nothing here enforces that; {@link ComponentRegistry#requireNoCollisions()}
  * reports the clash if a library neglects it and the application happens to own the same tag.
  */
-public record ComponentSource(String componentPackage, String componentsPath) {
+public record ComponentSource(String componentPackage, String templatesPath) {
 
     /** A source whose templates sit directly under the Thymeleaf templates root. */
     public ComponentSource(String componentPackage) {

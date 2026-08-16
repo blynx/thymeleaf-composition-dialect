@@ -19,7 +19,7 @@ templateEngine.addDialect(new CompositionDialect("com.example.demo.components"))
 | Parameter | Required | Description |
 |---|---|---|
 | `componentPackage` | yes | Package to scan for components |
-| `componentsPath` | no | Sub-path under the Thymeleaf templates root where component templates live |
+| `templatesPath` | no | Sub-path under the Thymeleaf templates root where component templates live |
 | `prefix` | no | Tag prefix (default: `c`) |
 
 ## Spring Boot
@@ -28,13 +28,13 @@ Add the library to your dependencies. With Spring Boot auto-configuration, you d
 
 ```properties
 thymeleaf.composition.component-package=com.example.demo.components
-thymeleaf.composition.components-path=components
+thymeleaf.composition.templates-path=components
 ```
 
 | Property | Required | Description |
 |---|---|---|
 | `thymeleaf.composition.component-package` | no | Package to scan for your own components — omit it if you only import component libraries |
-| `thymeleaf.composition.components-path` | no | Sub-path under the templates root |
+| `thymeleaf.composition.templates-path` | no | Sub-path under the templates root |
 | `thymeleaf.composition.prefix` | no | Tag prefix (default: `c`) |
 
 For more control, declare your own bean. Auto-configuration backs off automatically when you do:

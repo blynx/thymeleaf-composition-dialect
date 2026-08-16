@@ -54,7 +54,9 @@ so that everything under `cases/` is a case:
   cover nesting.
 - `handoff` passes content on to another component.
 - `outline` and `heading` publish and read a value.
-- `relay` demonstrates `c:rest`.
+- `relay` demonstrates `c:rest`; `rest-reader` reads the same `restAttributes` map itself, which is what
+  pins the accessor's name down — `c:rest` goes through the dialect's own processor and would survive a
+  rename of it.
 - `inserter` pulls a plain Thymeleaf fragment (`inserter-body.html`, the only file in `casescomponents/`
   without a class) into its own template, for the insertion cases.
 

@@ -71,7 +71,7 @@ public final class ComponentRegistry {
                 continue;
             }
             String tagName = toTagName(componentClass);
-            String templatePath = buildComponentPath(source.componentsPath(), componentClass, tagName);
+            String templatePath = buildComponentPath(source.templatesPath(), componentClass, tagName);
             Set<String> props = readDeclaredProps(componentClass);
             descriptors.add(new ComponentDescriptor(componentClass, source, prefix, tagName, templatePath, props));
         }
@@ -83,9 +83,9 @@ public final class ComponentRegistry {
         return aggregate(sources.stream().map(source -> scan(source, prefix)).toList());
     }
 
-    /** Convenience for the single-source case, where the path is the dialect's own {@code componentsPath}. */
-    public static ComponentRegistry scan(String componentPackage, String componentsPath, String prefix) {
-        return scan(new ComponentSource(componentPackage, componentsPath), prefix);
+    /** Convenience for the single-source case, where the path is the dialect's own {@code templatesPath}. */
+    public static ComponentRegistry scan(String componentPackage, String templatesPath, String prefix) {
+        return scan(new ComponentSource(componentPackage, templatesPath), prefix);
     }
 
     /**
@@ -242,17 +242,17 @@ public final class ComponentRegistry {
     }
 
     /**
-     * The template path a component's fragment is loaded from: the optional {@code componentsPath}
+     * The template path a component's fragment is loaded from: the optional {@code templatesPath}
      * root, the component's {@code pathPrefix}, its own {@code path} sub-path, and the tag name — joined
      * with {@code /}. Both come from {@link Composition} — on the class itself for {@code path}, on the
      * class then its package for {@code pathPrefix} — and default to {@code ""} (no extra path segment)
      * when {@code @Composition} is absent or leaves that member unset.
      */
-    public static String buildComponentPath(String componentsPath, Class<? extends CompositionComponent> componentClass,
+    public static String buildComponentPath(String templatesPath, Class<? extends CompositionComponent> componentClass,
                                             String tagName) {
         List<String> pathParts = new ArrayList<>();
-        if (componentsPath != null && !componentsPath.isEmpty()) {
-            pathParts.add(trimSlashes(componentsPath));
+        if (templatesPath != null && !templatesPath.isEmpty()) {
+            pathParts.add(trimSlashes(templatesPath));
         }
         String pathPrefix = resolvePathPrefix(componentClass);
         if (!pathPrefix.isEmpty()) {
