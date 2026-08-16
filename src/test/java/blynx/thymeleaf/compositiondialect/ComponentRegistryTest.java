@@ -5,13 +5,17 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
 import blynx.thymeleaf.compositiondialect.registryfixtures.abstractbase.BaseThing;
 import blynx.thymeleaf.compositiondialect.registryfixtures.abstractbase.Widget;
-import blynx.thymeleaf.compositiondialect.registryfixtures.pathprefix.BareLeaf;
-import blynx.thymeleaf.compositiondialect.registryfixtures.pathprefix.Leaf;
+import blynx.thymeleaf.compositiondialect.registryfixtures.composition.AnnotatedLeaf;
+import blynx.thymeleaf.compositiondialect.registryfixtures.composition.BareAnnotatedLeaf;
+import blynx.thymeleaf.compositiondialect.registryfixtures.composition.OverridingLeaf;
+import blynx.thymeleaf.compositiondialect.registryfixtures.props.AnnotatedProps;
+import blynx.thymeleaf.compositiondialect.registryfixtures.props.RecordProps;
 import blynx.thymeleaf.compositiondialect.testcomponents.Card;
 import blynx.thymeleaf.compositiondialect.testcomponents.MagicHeadings;
 
@@ -22,8 +26,10 @@ class ComponentRegistryTest {
             "blynx.thymeleaf.compositiondialect.registryfixtures.collision";
     private static final String ABSTRACT_BASE_FIXTURES =
             "blynx.thymeleaf.compositiondialect.registryfixtures.abstractbase";
-    private static final String PATH_PREFIX_FIXTURES =
-            "blynx.thymeleaf.compositiondialect.registryfixtures.pathprefix";
+    private static final String COMPOSITION_FIXTURES =
+            "blynx.thymeleaf.compositiondialect.registryfixtures.composition";
+    private static final String PROPS_FIXTURES =
+            "blynx.thymeleaf.compositiondialect.registryfixtures.props";
 
     private ComponentRegistry scan(String prefix) {
         return ComponentRegistry.scan(PACKAGE, "testcomponents", prefix);
@@ -146,7 +152,7 @@ class ComponentRegistryTest {
     }
 
     @Test
-    void aConcreteSubclassGetsItsOwnPathNotItsAbstractParents() {
+    void aConcreteSubclassGetsItsOwnCompositionPathRegardlessOfItsAbstractParent() {
         ComponentRegistry registry = ComponentRegistry.scan(ABSTRACT_BASE_FIXTURES, null, "c");
 
         ComponentDescriptor widget = registry.findByClass(Widget.class).orElseThrow();
@@ -154,18 +160,48 @@ class ComponentRegistryTest {
     }
 
     @Test
-    void pathPrefixComposesWithASubclassesOwnPath() {
-        ComponentRegistry registry = ComponentRegistry.scan(PATH_PREFIX_FIXTURES, null, "c");
+    void compositionPathPrefixOnThePackageComposesWithATypesOwnCompositionPath() {
+        ComponentRegistry registry = ComponentRegistry.scan(COMPOSITION_FIXTURES, null, "c");
 
-        ComponentDescriptor leaf = registry.findByClass(Leaf.class).orElseThrow();
-        assertEquals("shared/leaf-folder/leaf", leaf.templatePath());
+        ComponentDescriptor leaf = registry.findByClass(AnnotatedLeaf.class).orElseThrow();
+        assertEquals("shared/leaf-folder/annotated-leaf", leaf.templatePath());
     }
 
     @Test
-    void pathPrefixComposesEvenWithoutAnOwnPath() {
-        ComponentRegistry registry = ComponentRegistry.scan(PATH_PREFIX_FIXTURES, null, "c");
+    void compositionPathPrefixOnThePackageAppliesWithNoCompositionOnTheTypeAtAll() {
+        ComponentRegistry registry = ComponentRegistry.scan(COMPOSITION_FIXTURES, null, "c");
 
-        ComponentDescriptor bareLeaf = registry.findByClass(BareLeaf.class).orElseThrow();
-        assertEquals("shared/bare-leaf", bareLeaf.templatePath());
+        ComponentDescriptor bareLeaf = registry.findByClass(BareAnnotatedLeaf.class).orElseThrow();
+        assertEquals("shared/bare-annotated-leaf", bareLeaf.templatePath());
+    }
+
+    @Test
+    void compositionPathPrefixOnTheTypeWinsOverThePackages() {
+        ComponentRegistry registry = ComponentRegistry.scan(COMPOSITION_FIXTURES, null, "c");
+
+        ComponentDescriptor overriding = registry.findByClass(OverridingLeaf.class).orElseThrow();
+        assertEquals("override/own-folder/overriding-leaf", overriding.templatePath());
+    }
+
+    @Test
+    void classDeclaresPropsViaPropAnnotatedFields() {
+        ComponentRegistry registry = ComponentRegistry.scan(PROPS_FIXTURES, null, "c");
+
+        ComponentDescriptor descriptor = registry.findByClass(AnnotatedProps.class).orElseThrow();
+        assertEquals(Set.of("variant", "data-size"), descriptor.props());
+    }
+
+    @Test
+    void classWithNoPropAnnotatedFieldsHasNoProps() {
+        ComponentDescriptor descriptor = scan("c").findByClass(Card.class).orElseThrow();
+        assertEquals(Set.of(), descriptor.props());
+    }
+
+    @Test
+    void aRecordsComponentsAreItsPropsWithNoDeclarationAtAll() {
+        ComponentRegistry registry = ComponentRegistry.scan(PROPS_FIXTURES, null, "c");
+
+        ComponentDescriptor descriptor = registry.findByClass(RecordProps.class).orElseThrow();
+        assertEquals(Set.of("variant", "auto-hide-seconds"), descriptor.props());
     }
 }

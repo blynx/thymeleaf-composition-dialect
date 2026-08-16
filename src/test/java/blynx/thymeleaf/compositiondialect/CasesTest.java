@@ -167,6 +167,14 @@ class CasesTest {
         }
 
         @Test
+        void aCallSiteSlotAttributeSpelledWithADashIsRecognizedToo() {
+            String out = render("slots/a-call-site-slot-attribute-spelled-with-a-dash-is-recognized-too");
+
+            assertTrue(at(out, "id=\"head\"") < at(out, "id=\"body\""), out);
+            assertFalse(out.contains("data-c-slot"), out);
+        }
+
+        @Test
         void aNestedCSlotInsideAFallbackIsRejected() {
             String message = failureOf("slots/a-nested-c-slot-inside-a-fallback-is-rejected");
 
@@ -279,6 +287,29 @@ class CasesTest {
             assertTrue(out.contains("id=\"heading-2\""), out);
             assertEquals("NONE", textOf(out, "written-by"), out);
         }
+
+        @Test
+        void anExplicitLevelOnOutlineItselfAlsoOverridesTheComputedNesting() {
+            String out = render("context/an-explicit-level-on-outline-itself-also-overrides-the-computed-nesting");
+
+            assertEquals("explicit", textOf(out, "heading-99"), out);
+            assertEquals("computed from the explicit one", textOf(out, "heading-100"), out);
+        }
+
+        @Test
+        void outlineLevelCompoundsThroughNestedSlots() {
+            String out = render("context/outline-level-compounds-through-nested-slots");
+
+            // heading-1: once directly in layout's slot, once inside the outline-agnostic panel — both
+            // transparently seeing layout's own outline, not resetting or losing it through either slot hop.
+            assertEquals(2, count(out, "id=\"heading-1\""), out);
+            assertTrue(out.contains("direct in layout's slot"), out);
+            assertTrue(out.contains("inside a panel that is inside layout's slot"), out);
+
+            // heading-2: once for a fresh outline nested directly in layout's slot, once for a fresh outline
+            // nested inside the panel — both computed off the same ambient layout outline either way.
+            assertEquals(2, count(out, "id=\"heading-2\""), out);
+        }
     }
 
     @Nested
@@ -319,6 +350,30 @@ class CasesTest {
             assertTrue(out.contains("type=\"submit\""), out);
             assertTrue(out.contains("disabled=\"true\""), out);
             assertFalse(out.contains("variant"), out);
+        }
+
+        @Test
+        void aRecordsComponentsAreItsProps() {
+            String out = render("attributes/a-records-components-are-its-props");
+
+            assertTrue(out.contains("class=\"alert alert-warning\""), out);
+            assertTrue(out.contains("data-auto-hide=\"10\""), out);
+            assertTrue(out.contains("id=\"quota-alert\""), out);
+            assertTrue(out.contains("alert-close"), out);
+            assertTrue(out.contains("Storage almost full."), out);
+            assertFalse(out.contains("closable"), out);
+            assertFalse(out.contains("level="), out);
+            assertFalse(out.contains("auto-hide-seconds="), out);
+        }
+
+        @Test
+        void aRecordsAbsentPropsDefaultByType() {
+            String out = render("attributes/a-records-absent-props-default-by-type");
+
+            assertTrue(out.contains("class=\"alert alert-info\""), out);
+            assertFalse(out.contains("data-auto-hide"), out);
+            assertFalse(out.contains("alert-close"), out);
+            assertTrue(out.contains("Nothing to report."), out);
         }
     }
 

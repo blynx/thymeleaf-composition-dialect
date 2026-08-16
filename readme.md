@@ -6,7 +6,7 @@ _of just space and thyme"_
 
 # Thymeleaf Composition Dialect
 
-A flavour of ui component templating in Thymeleaf.
+A UI component templating style for Thymeleaf.
 
 ⚠️ Still drafting, some things may change ⚠️
 
@@ -20,7 +20,7 @@ A flavour of ui component templating in Thymeleaf.
 
 ## Setup
 
-Add the dialect to Thymeleaf with the package to scan for component classes:
+Add the dialect to Thymeleaf. Give it the package to scan for components:
 
 ```java
 templateEngine.addDialect(new CompositionDialect("com.example.demo.components"));
@@ -32,14 +32,14 @@ For Spring Boot, set the package in `application.properties`:
 thymeleaf.composition.component-package=com.example.demo.components
 ```
 
-See [Setup](docs/reference/setup.md) for full configuration options.
+See [Setup](docs/reference/setup.md) for all configuration options.
 
 ## Documentation
 
 - [Setup](docs/reference/setup.md) — standalone and Spring Boot configuration
-- [Components](docs/reference/components.md) — component classes, templates, naming
+- [Components](docs/reference/components.md) — components as records or classes, templates, naming
 - [Slots](docs/reference/slots.md) — default and named slots
-- [Attributes](docs/reference/attributes.md) — passing attributes, declaring props, defaults, rest attributes
+- [Attributes](docs/reference/attributes.md) — passing attributes, props, defaults, rest attributes
 - [Context](docs/reference/context.md) — locale, messages, variable scope
 
 ## Credits

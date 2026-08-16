@@ -1,0 +1,9 @@
+<!--
+  CASE      Alert is a record; level, closable and auto-hide-seconds are its record components, needing no
+            props declaration. "closable" is @Prop-overridden to bind the "dismissible" component; "level"
+            and "auto-hide-seconds" derive their attribute names automatically (kebab-cased). "id" is not a
+            prop, so it still spreads via c:rest.
+  EXPECT    level is coerced to the WARNING enum constant, closable/auto-hide-seconds are coerced to
+            boolean/int, and none of the three prop names themselves leak into the rendered attributes
+-->
+<c:alert level="warning" closable="true" auto-hide-seconds="10" id="quota-alert">Storage almost full.</c:alert>

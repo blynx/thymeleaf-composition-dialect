@@ -1,0 +1,20 @@
+<!--
+  CASE      Unlike ${this}, a published context variable does not unwind to the writer when it crosses a
+            slot boundary — it follows the rendered tree. layout.html wraps its own default slot in
+            <c:outline>. Content passed into that slot sees it, even routed through panel.html's slot too,
+            and panel.html has no outline of its own at all.
+  EXPECT    heading-1 direct in the slot, heading-2 in a fresh nested outline, heading-1 again inside the
+            outline-agnostic panel (transparent to it), heading-2 in a fresh outline nested inside that panel
+-->
+<c:layout>
+    <c:heading>direct in layout's slot</c:heading>
+    <c:outline>
+        <c:heading>in another outline, itself inside layout's slot</c:heading>
+    </c:outline>
+    <c:panel>
+        <c:heading>inside a panel that is inside layout's slot</c:heading>
+        <c:outline>
+            <c:heading>inside an outline inside that panel</c:heading>
+        </c:outline>
+    </c:panel>
+</c:layout>

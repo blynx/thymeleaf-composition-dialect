@@ -1,0 +1,12 @@
+<!--
+  CASE      The call-site attribute that assigns a direct child to a named slot can be spelled
+            data-c-slot instead of c:slot. Matched by attribute identity rather than a raw string
+            compare — the same mechanism that already lets the <c:slot /> marker itself be spelled
+            <c-slot /> — this is a side effect of that, not a feature of its own.
+  EXPECT    the given content lands in the layout's header, ahead of the body; no leftover
+            "data-c-slot" attribute anywhere
+-->
+<c:layout title="dash attribute">
+    <p id="body">body</p>
+    <p data-c-slot="header" id="head">head</p>
+</c:layout>

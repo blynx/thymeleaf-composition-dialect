@@ -1,0 +1,12 @@
+<!--
+  CASE      Not just heading.html reads an explicit level over the published one — outline.html's own
+            "level" is a record component like any other prop, so it is exactly as overridable. A nested
+            outline with no explicit level of its own still computes off the explicit one it is inside.
+  EXPECT    the first heading reports the explicit level (99); the nested outline computes one more (100)
+-->
+<c:outline level="99">
+    <c:heading>explicit</c:heading>
+    <c:outline>
+        <c:heading>computed from the explicit one</c:heading>
+    </c:outline>
+</c:outline>

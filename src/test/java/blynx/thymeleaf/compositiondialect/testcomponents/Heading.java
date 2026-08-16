@@ -3,31 +3,14 @@ package blynx.thymeleaf.compositiondialect.testcomponents;
 import blynx.thymeleaf.compositiondialect.CompositionComponent;
 import blynx.thymeleaf.compositiondialect.CompositionComponentContext;
 
-public class Heading extends CompositionComponent {
+/** A boxed {@code Integer}, not {@code int}: absent must be distinguishable from an explicit {@code 0}. */
+public record Heading(Integer level, CompositionComponentContext context) implements CompositionComponent {
 
-    private final int level;
-
-    public Heading(CompositionComponentContext context) {
-        super(context);
-        this.level = resolveLevel(context);
-    }
-
-    private static int resolveLevel(CompositionComponentContext context) {
-        Object rawLevel = context.attributes().get("level");
-        if (rawLevel != null) {
-            try {
-                return Integer.parseInt(rawLevel.toString());
-            } catch (NumberFormatException ignored) {
-                // not a number: fall back to the inherited / default level
-            }
+    public Heading {
+        if (level == null) {
+            level = context.variable("parentMagicHeadings") instanceof MagicHeadings parent
+                    ? parent.level()
+                    : 1;
         }
-        if (context.variable("parentMagicHeadings") instanceof MagicHeadings parent) {
-            return parent.getLevel();
-        }
-        return 1;
-    }
-
-    public int getLevel() {
-        return level;
     }
 }

@@ -1,0 +1,4 @@
+<div th:class="${this.cssClass}" th:attr="data-auto-hide=${this.autoHides ? this.autoHideSeconds : null}" c:rest>
+    <c:slot>Nothing to report.</c:slot>
+    <button th:if="${this.dismissible}" type="button" class="alert-close">&times;</button>
+</div>

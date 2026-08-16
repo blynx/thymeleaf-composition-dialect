@@ -1,11 +1,14 @@
 package blynx.thymeleaf.compositiondialect;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.lang.reflect.RecordComponent;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -142,17 +145,20 @@ public final class ComponentRegistry {
 
     /** PascalCase simple class name to kebab-case tag name, e.g. {@code MagicHeadings -> magic-headings}. */
     public static String toTagName(Class<?> componentClass) {
-        return componentClass.getSimpleName()
-                .replaceAll("(?!^)(?=[A-Z][a-z])", "-")
-                .toLowerCase(Locale.ROOT);
+        return kebabCase(componentClass.getSimpleName());
+    }
+
+    /** camelCase or PascalCase to kebab-case, e.g. {@code autoHideSeconds -> auto-hide-seconds}. */
+    private static String kebabCase(String name) {
+        return name.replaceAll("(?!^)(?=[A-Z][a-z])", "-").toLowerCase(Locale.ROOT);
     }
 
     /**
      * The template path a component's fragment is loaded from: the optional {@code componentsPath}
-     * root, the component's static {@code pathPrefix} (read reflectively, so a shared abstract base's
-     * declaration composes down to every subclass that doesn't redeclare it), the component's own static
-     * {@code path} sub-path (read reflectively so subclasses may shadow it), and the tag name — joined
-     * with {@code /}.
+     * root, the component's {@code pathPrefix}, its own {@code path} sub-path, and the tag name — joined
+     * with {@code /}. Both come from {@link Composition} — on the class itself for {@code path}, on the
+     * class then its package for {@code pathPrefix} — and default to {@code ""} (no extra path segment)
+     * when {@code @Composition} is absent or leaves that member unset.
      */
     public static String buildComponentPath(String componentsPath, Class<? extends CompositionComponent> componentClass,
                                             String tagName) {
@@ -160,11 +166,11 @@ public final class ComponentRegistry {
         if (componentsPath != null && !componentsPath.isEmpty()) {
             pathParts.add(trimSlashes(componentsPath));
         }
-        String pathPrefix = readStaticStringField(componentClass, "pathPrefix");
+        String pathPrefix = resolvePathPrefix(componentClass);
         if (!pathPrefix.isEmpty()) {
             pathParts.add(pathPrefix);
         }
-        String componentPath = readStaticStringField(componentClass, "path");
+        String componentPath = resolvePath(componentClass);
         if (!componentPath.isEmpty()) {
             pathParts.add(componentPath);
         }
@@ -172,25 +178,72 @@ public final class ComponentRegistry {
         return String.join("/", pathParts);
     }
 
-    private static String readStaticStringField(Class<? extends CompositionComponent> componentClass, String fieldName) {
-        try {
-            return trimSlashes((String) componentClass.getField(fieldName).get(componentClass));
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(CompositionDialect.DIALECT_NAME
-                    + ": Could not read the static \"" + fieldName + "\" field of component " + componentClass.getName(), e);
-        }
+    private static String resolvePath(Class<? extends CompositionComponent> componentClass) {
+        Composition onType = componentClass.getAnnotation(Composition.class);
+        return onType != null ? trimSlashes(onType.path()) : "";
     }
 
-    /** The component's declared {@code props} — resolved once here so it is introspectable without rendering. */
-    private static Set<String> readDeclaredProps(Class<? extends CompositionComponent> componentClass) {
-        try {
-            @SuppressWarnings("unchecked")
-            Set<String> declared = (Set<String>) componentClass.getField("props").get(componentClass);
-            return declared;
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(CompositionDialect.DIALECT_NAME
-                    + ": Could not read the static \"props\" field of component " + componentClass.getName(), e);
+    private static String resolvePathPrefix(Class<? extends CompositionComponent> componentClass) {
+        Composition onType = componentClass.getAnnotation(Composition.class);
+        if (onType != null && !onType.pathPrefix().isEmpty()) {
+            return trimSlashes(onType.pathPrefix());
         }
+        Package componentPackage = componentClass.getPackage();
+        Composition onPackage = componentPackage == null ? null : componentPackage.getAnnotation(Composition.class);
+        return onPackage != null ? trimSlashes(onPackage.pathPrefix()) : "";
+    }
+
+    /**
+     * The component's declared props — resolved once here so it is introspectable without rendering.
+     * A record's props are its record components (other than the one holding its
+     * {@link CompositionComponentContext}), one-to-one, needing no declaration at all. A class declares
+     * props by annotating fields with {@link Prop}; a class with no {@code @Prop} fields has no props.
+     */
+    private static Set<String> readDeclaredProps(Class<? extends CompositionComponent> componentClass) {
+        return componentClass.isRecord() ? recordProps(componentClass) : annotatedProps(componentClass);
+    }
+
+    private static Set<String> recordProps(Class<? extends CompositionComponent> componentClass) {
+        Set<String> props = new LinkedHashSet<>();
+        for (RecordComponent component : componentClass.getRecordComponents()) {
+            if (CompositionComponentContext.class.isAssignableFrom(component.getType())) {
+                continue;
+            }
+            props.add(propName(componentClass, component.getName()));
+        }
+        return Set.copyOf(props);
+    }
+
+    private static Set<String> annotatedProps(Class<? extends CompositionComponent> componentClass) {
+        Set<String> props = new LinkedHashSet<>();
+        for (Field field : componentClass.getDeclaredFields()) {
+            if (field.isAnnotationPresent(Prop.class)) {
+                props.add(propName(componentClass, field.getName()));
+            }
+        }
+        return Set.copyOf(props);
+    }
+
+    /**
+     * The attribute name a field or record component of the given Java name binds from: {@link Prop#value()}
+     * when its backing field carries one, otherwise the name itself kebab-cased. A record component's
+     * {@code @Prop} lands on its backing field (not the {@link RecordComponent} itself, which {@code @Prop}'s
+     * {@code FIELD} target does not reach), so both cases read the same declared field.
+     *
+     * <p>Package-private rather than {@code private}: {@link CompositionElementModelProcessor}'s record
+     * props binder needs the exact same derivation, in record-component order, to match each canonical
+     * constructor parameter to the attribute it binds from.
+     */
+    static String propName(Class<?> componentClass, String javaName) {
+        Field field;
+        try {
+            field = componentClass.getDeclaredField(javaName);
+        } catch (NoSuchFieldException e) {
+            throw new IllegalStateException(CompositionDialect.DIALECT_NAME
+                    + ": Could not read the \"" + javaName + "\" field of component " + componentClass.getName(), e);
+        }
+        Prop prop = field.getAnnotation(Prop.class);
+        return prop != null && !prop.value().isEmpty() ? prop.value() : kebabCase(javaName);
     }
 
     private static String trimSlashes(String value) {

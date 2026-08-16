@@ -5,23 +5,14 @@ import blynx.thymeleaf.compositiondialect.CompositionComponentContext;
 
 /**
  * Reports the level of the nearest enclosing {@link Outline} in the rendered document, unless it is given
- * an explicit {@code level} — an attribute the caller wrote beats a value the surroundings published.
+ * an explicit {@code level} — an attribute the caller wrote beats a value the surroundings published. A
+ * boxed {@code Integer}, not {@code int}: absent must be distinguishable from an explicit {@code 0}.
  */
-public class Heading extends CompositionComponent {
+public record Heading(Integer level, CompositionComponentContext context) implements CompositionComponent {
 
-    private final int level;
-
-    public Heading(CompositionComponentContext context) {
-        super(context);
-        Object explicit = context.attributes().get("level");
-        if (explicit != null) {
-            this.level = Integer.parseInt(explicit.toString());
-        } else {
-            this.level = context.variable("outline") instanceof Outline outline ? outline.getLevel() : 1;
+    public Heading {
+        if (level == null) {
+            level = context.variable("outline") instanceof Outline outline ? outline.level() : 1;
         }
-    }
-
-    public int getLevel() {
-        return level;
     }
 }

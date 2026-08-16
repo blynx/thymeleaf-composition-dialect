@@ -1,0 +1,9 @@
+<!--
+  CASE      Alert's props are all left unset. "level" (Level, a reference type) is coerced to null, then
+            defaulted to INFO in the record's compact constructor. "closable"/"auto-hide-seconds" (both
+            primitives) are coerced straight to their zero value — false and 0 — with no compact-constructor
+            step needed.
+  EXPECT    level defaults to INFO, the dismiss button is absent (dismissible defaulted to false), and the
+            data-auto-hide attribute is absent (autoHideSeconds defaulted to 0, so autoHides() is false)
+-->
+<c:alert />

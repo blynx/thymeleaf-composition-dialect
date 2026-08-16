@@ -6,6 +6,7 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.RecordComponent;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -107,15 +108,7 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         this.callerTagName = dialectPrefix + ":" + CompositionCallerProcessor.TAG_NAME;
         this.componentPath = descriptor.templatePath();
         this.props = descriptor.props();
-        Constructor<? extends CompositionComponent> componentConstructor;
-        try {
-            componentConstructor = componentClass.getConstructor(CompositionComponentContext.class);
-        } catch (NoSuchMethodException e) {
-            throw new IllegalStateException(CompositionDialect.DIALECT_NAME + ": Component \"" + elementName + "\" ("
-                    + componentClass.getName() + ") must declare a public constructor taking a single "
-                    + CompositionComponentContext.class.getSimpleName() + " argument", e);
-        }
-        this.componentFactory = createComponentFactory(componentConstructor);
+        this.componentFactory = createComponentFactory(componentClass, elementName);
     }
 
     @Override
@@ -460,7 +453,28 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         return resolved;
     }
 
+    /**
+     * A component either declares a single-arg {@code (CompositionComponentContext)} constructor — every
+     * class-based component, and a record whose only component is the context — or, for a record with
+     * props of its own, is bound via its canonical constructor by {@link #createRecordPropsFactory}.
+     */
     private static Function<CompositionComponentContext, CompositionComponent> createComponentFactory(
+            Class<? extends CompositionComponent> componentClass, String elementName) {
+        Constructor<? extends CompositionComponent> constructor;
+        try {
+            constructor = componentClass.getConstructor(CompositionComponentContext.class);
+        } catch (NoSuchMethodException e) {
+            if (componentClass.isRecord()) {
+                return createRecordPropsFactory(componentClass, elementName);
+            }
+            throw new IllegalStateException(CompositionDialect.DIALECT_NAME + ": Component \"" + elementName + "\" ("
+                    + componentClass.getName() + ") must declare a public constructor taking a single "
+                    + CompositionComponentContext.class.getSimpleName() + " argument", e);
+        }
+        return createSingleArgFactory(constructor);
+    }
+
+    private static Function<CompositionComponentContext, CompositionComponent> createSingleArgFactory(
             Constructor<? extends CompositionComponent> constructor) {
         try {
             MethodHandles.Lookup lookup = MethodHandles.lookup();
@@ -484,5 +498,49 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
                 }
             };
         }
+    }
+
+    /**
+     * Binds a record's props straight off its canonical constructor: each record component names an
+     * attribute — kebab-cased, or {@link Prop} to override — and is coerced to its declared type by
+     * {@link PropCoercion}, except the one component (if any) typed {@link CompositionComponentContext},
+     * which receives the context itself. Component order, attribute names and types are all resolved once
+     * here rather than per render; only the coercion happens per render, since only attribute values change
+     * between occurrences.
+     */
+    private static Function<CompositionComponentContext, CompositionComponent> createRecordPropsFactory(
+            Class<? extends CompositionComponent> componentClass, String elementName) {
+        RecordComponent[] components = componentClass.getRecordComponents();
+        Class<?>[] types = new Class<?>[components.length];
+        String[] attributeNames = new String[components.length];
+        for (int i = 0; i < components.length; i++) {
+            types[i] = components[i].getType();
+            attributeNames[i] = CompositionComponentContext.class.isAssignableFrom(types[i])
+                    ? null
+                    : ComponentRegistry.propName(componentClass, components[i].getName());
+        }
+
+        Constructor<? extends CompositionComponent> canonical;
+        try {
+            canonical = componentClass.getDeclaredConstructor(types);
+        } catch (NoSuchMethodException e) {
+            throw new IllegalStateException(CompositionDialect.DIALECT_NAME + ": Component \"" + elementName + "\" ("
+                    + componentClass.getName() + ") has no canonical constructor matching its record components", e);
+        }
+
+        return componentContext -> {
+            Object[] args = new Object[components.length];
+            for (int i = 0; i < components.length; i++) {
+                args[i] = attributeNames[i] == null
+                        ? componentContext
+                        : PropCoercion.coerce(componentContext.attributes().get(attributeNames[i]), types[i],
+                                elementName, attributeNames[i]);
+            }
+            try {
+                return canonical.newInstance(args);
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(e);
+            }
+        };
     }
 }

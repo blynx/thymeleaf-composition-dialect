@@ -1,16 +1,14 @@
 package blynx.thymeleaf.compositiondialect.casescomponents;
 
-import java.util.Set;
-
-import blynx.thymeleaf.compositiondialect.CompositionComponent;
+import blynx.thymeleaf.compositiondialect.AbstractCompositionComponent;
 import blynx.thymeleaf.compositiondialect.CompositionComponentContext;
+import blynx.thymeleaf.compositiondialect.Prop;
 
-/** Declares "variant" as a prop, excluded from {@code c:rest}; reads "type" without declaring it, so
- * it's still spread by {@code c:rest} like any attribute the component never touches. */
-public class Button extends CompositionComponent {
+/** Declares "variant" as a prop via {@link Prop}, excluded from {@code c:rest}; reads "type" without
+ * declaring it, so it's still spread by {@code c:rest} like any attribute the component never touches. */
+public class Button extends AbstractCompositionComponent {
 
-    public static final Set<String> props = Set.of("variant");
-
+    @Prop
     private final String variant;
 
     public Button(CompositionComponentContext context) {

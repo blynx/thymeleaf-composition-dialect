@@ -1,10 +1,10 @@
 # Components
 
-A component needs two things: a **class** and a **template**.
+A component needs two things: a record or class, and a template.
 
 ## Naming
 
-The class name determines the tag name — `PascalCase` is converted to `kebab-case`:
+The class name sets the tag name. `PascalCase` becomes `kebab-case`:
 
 | Class | Tag |
 |---|---|
@@ -14,19 +14,39 @@ The class name determines the tag name — `PascalCase` is converted to `kebab-c
 
 ## Component class
 
-Extend `CompositionComponent` and declare a constructor that takes `CompositionComponentContext`:
+`CompositionComponent` is an interface with one method, `context()`. It returns this component's
+`CompositionComponentContext` — its attributes, its slot names, and access to locale, messages, and the
+template variable scope.
+
+The simplest way to implement it is a record. Its components are its props, one for one, with no extra
+declaration:
 
 ```java
 package com.example.demo.components;
 
-import java.util.Set;
-
 import blynx.thymeleaf.compositiondialect.CompositionComponent;
 import blynx.thymeleaf.compositiondialect.CompositionComponentContext;
 
-public class Button extends CompositionComponent {
-    public static final Set<String> props = Set.of("variant");
+public record Button(String variant, CompositionComponentContext context) implements CompositionComponent {
+    public Button {
+        variant = variant != null ? variant : "primary";
+    }
+}
+```
 
+You can also write a component as a plain class. Extend `AbstractCompositionComponent`, and declare each prop
+as a field with `@Prop`:
+
+```java
+package com.example.demo.components;
+
+import blynx.thymeleaf.compositiondialect.AbstractCompositionComponent;
+import blynx.thymeleaf.compositiondialect.CompositionComponentContext;
+import blynx.thymeleaf.compositiondialect.Prop;
+
+public class Button extends AbstractCompositionComponent {
+
+    @Prop
     private final String variant;
 
     public Button(CompositionComponentContext context) {
@@ -41,7 +61,14 @@ public class Button extends CompositionComponent {
 }
 ```
 
-The component instance is available in its template as `${this}`, and its public getters are reachable as properties — `${this.variant}` resolves to `getVariant()`. See [Attributes](attributes.md) for what `props` declares.
+`AbstractCompositionComponent` stores the context for you and implements `context()` from it. Use a plain
+class when a component must extend something else, needs custom coercion logic, or just reads better to you
+that way.
+
+The component instance is available in its template as `${this}`. A record's components are readable as
+properties with no `get` prefix — `${this.variant}` resolves to `variant()`. A class's public getters work
+the same way — `${this.variant}` resolves to `getVariant()`. See [Attributes](attributes.md) for how props
+are declared and coerced.
 
 ## Component template
 
@@ -56,56 +83,42 @@ Place the template at `{componentsPath}/{kebab-case-name}.html`:
 
 ## Subdirectories
 
-To organise templates into subdirectories, declare a `public static final String path` field:
+To organize templates into subdirectories, annotate the component with `@Composition`:
 
 ```java
-public class Button extends CompositionComponent {
-    public static final String path = "forms";
-
-    private final String variant;
-
-    public Button(CompositionComponentContext context) {
-        super(context);
-        Object raw = context.attributes().get("variant");
-        this.variant = raw != null ? raw.toString() : "primary";
-    }
-
-    public String getVariant() {
-        return variant;
-    }
+@Composition(path = "forms")
+public record Button(String variant, CompositionComponentContext context) implements CompositionComponent {
+    ...
 }
 ```
 
 This resolves the template to `components/forms/button.html`.
 
-## Sharing a path across an abstract base
+## Sharing a path prefix across a package
 
-`path` shadows rather than composes: a subclass that declares its own `path` replaces the parent's
-entirely, since it's ordinary Java field hiding. If you have a shared abstract base and want every
-concrete subclass to inherit a common sub-path without repeating it, declare `pathPrefix` on the base
-instead — it's read independently of `path` and composes with whatever a subclass sets for itself:
+`@Composition(path = ...)` applies to one component only. A record can never share a base class with another
+record — records are final — so there is no way to inherit a `path` across a group of components. Instead,
+declare `@Composition(pathPrefix = ...)` once on the package, in `package-info.java`:
 
 ```java
-public abstract class FormField extends CompositionComponent {
-    public static final String pathPrefix = "forms";
-
-    public FormField(CompositionComponentContext context) {
-        super(context);
-    }
-}
-
-public class TextField extends FormField {
-    public static final String path = "text-inputs";
-
-    public TextField(CompositionComponentContext context) {
-        super(context);
-    }
-}
+// com/example/demo/components/forms/package-info.java
+@Composition(pathPrefix = "forms")
+package com.example.demo.components.forms;
 ```
 
-This resolves `TextField`'s template to `components/forms/text-inputs/text-field.html` — `pathPrefix`
-first, then the subclass's own `path`, then the tag name. A subclass that declares no `path` of its own
-still gets `pathPrefix` alone, e.g. `components/forms/text-field.html`.
+```java
+package com.example.demo.components.forms;
+
+@Composition(path = "text-inputs")
+public record TextField(CompositionComponentContext context) implements CompositionComponent { }
+```
+
+This resolves `TextField`'s template to `components/forms/text-inputs/text-field.html` — the package's
+`pathPrefix`, then the component's own `path`, then the tag name. A component with no `path` of its own still
+gets the package's `pathPrefix` alone, for example `components/forms/text-field.html`.
+
+A component that declares its own `@Composition(pathPrefix = ...)` overrides the package's value. It does
+not combine with it. The more specific placement always wins.
 
 ## Context
 

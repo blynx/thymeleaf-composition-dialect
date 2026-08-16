@@ -1,48 +1,33 @@
 package blynx.thymeleaf.compositiondialect;
 
 import java.util.Map;
-import java.util.Set;
 
 /**
- * Base class every composition component extends. Subclasses take a
- * {@link CompositionComponentContext} in their single public constructor.
+ * Every composition component implements this — a record whose components are its context and its props,
+ * or a plain class implementing it directly (see {@link AbstractCompositionComponent} for the latter's
+ * usual boilerplate). Either way, the component exposes its {@link CompositionComponentContext} via
+ * {@link #context()}; everything else here is a default method built on top of it.
  *
- * <p>{@code path}, {@code pathPrefix} and {@code props} are all read reflectively via
- * {@code getField(...)}. {@code path}/{@code pathPrefix} build the component's template path, joined as
- * {@code pathPrefix/path/tagName}; they differ in how they interact with inheritance — a subclass that
- * redeclares {@code path} shadows the parent's value entirely (Java field hiding), so it does not compose
- * across levels, while {@code pathPrefix} is meant to be declared once on a shared abstract base instead,
- * composing down to every subclass that leaves it undeclared.
- *
- * <p>{@code props} declares which attributes this component consumes as its own, by their plain name
- * (e.g. {@code "variant"}, whether the caller wrote {@code variant="..."} or {@code c:variant="..."}).
- * Reading an attribute via {@link CompositionComponentContext#attributes()} never by itself excludes it
- * from {@link #getRestAttributes()}/{@code c:rest} — only declaring it in {@code props} does, so a
- * component can read an attribute (to validate, log, or derive from it) while still letting it fall
- * through to {@code c:rest}.
+ * <p>A component's template path is declared with {@link Composition}; a class's props are declared with
+ * {@link Prop} on its fields; a record's props are its record components, one for one, needing no
+ * declaration at all.
  */
-public class CompositionComponent {
+public interface CompositionComponent {
 
-    public static final String DEFAULT_SLOT = "";
-    public static final String path = "";
-    public static final String pathPrefix = "";
-    public static final Set<String> props = Set.of();
+    String DEFAULT_SLOT = "";
 
-    private final CompositionComponentContext componentContext;
+    /** This component occurrence's context — attributes, slot names, locale, messages, variables. */
+    CompositionComponentContext context();
 
-    public CompositionComponent(CompositionComponentContext componentContext) {
-        this.componentContext = componentContext;
+    default Map<String, Object> getRestAttributes() {
+        return context().attributes().rest();
     }
 
-    public Map<String, Object> getRestAttributes() {
-        return componentContext.attributes().rest();
-    }
-
-    public boolean hasSlot() {
+    default boolean hasSlot() {
         return hasSlot(DEFAULT_SLOT);
     }
 
-    public boolean hasSlot(String slotName) {
-        return componentContext.slotNames().contains(slotName);
+    default boolean hasSlot(String slotName) {
+        return context().slotNames().contains(slotName);
     }
 }

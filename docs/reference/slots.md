@@ -1,6 +1,6 @@
 # Slots
 
-`<c:slot />` in a component template marks where the caller's content is injected.
+`<c:slot />` in a component template marks where the caller's content goes.
 
 ## Default slot
 
@@ -17,7 +17,8 @@
 
 ## Fallback content
 
-Content written between the marker's own tags renders when the caller passes nothing for that slot — for a named slot or the default slot alike:
+Content written between the marker's own tags renders when the caller passes nothing for that slot. This
+applies to a named slot and to the default slot alike:
 
 ```html
 <!-- card.html -->
@@ -35,16 +36,22 @@ Content written between the marker's own tags renders when the caller passes not
 <!-- renders: <div class="card"><header>Title</header><main>Nothing here yet.</main></div> -->
 ```
 
-A marker with no fallback content (`<c:slot></c:slot>`) renders nothing when the caller passes nothing, rather than leftover markup.
+A marker with no fallback content (`<c:slot></c:slot>`) renders nothing when the caller passes nothing. It
+does not leave leftover markup behind.
 
-Whitespace-only default-slot content — e.g. just the indentation between a component's tags — is treated as if nothing were passed, so the fallback still shows. This deliberately deviates from the native `<slot>` element, where a bare text node still counts as content and silently defeats a default-slot fallback. Only the default slot is affected this way: a named slot can never end up whitespace-only, since only an element can carry `c:slot`.
+Whitespace-only default-slot content — for example, just the indentation between a component's tags — is
+treated as if the caller passed nothing. The fallback still shows. This deviates from the native `<slot>`
+element on purpose: there, a bare text node still counts as content, and it silently defeats a default-slot
+fallback. Only the default slot works this way. A named slot can never end up whitespace-only, since only an
+element can carry `c:slot`.
 
-A slot's fallback content may not itself contain another `c:slot` marker — that is rejected as an error, unlike native `<slot>`, which permits it.
+A slot's fallback content must not itself contain another `c:slot` marker. The dialect rejects this as an
+error. Native `<slot>` permits it.
 
 ## `th:text`/`th:utext` shorthand
 
-`th:text`/`th:utext` on the component tag itself fills its default slot, so a component invocation with
-only text content doesn't need a `<th:block>` wrapper:
+`th:text`/`th:utext` on the component tag itself fills its default slot. A component invocation with only
+text content does not need a `<th:block>` wrapper:
 
 ```html
 <!-- today, spelled out -->
@@ -56,14 +63,15 @@ only text content doesn't need a `<th:block>` wrapper:
 <c:button th:text="#{catalog.add-to-cart}" />
 ```
 
-It behaves exactly as `th:text` would on any hand-written element: it silently replaces whatever
-default-slot content was written between the tags, and if both `th:text` and `th:utext` are present at
-once, the standard dialect's own precedence resolves it — this dialect does not add its own validation.
+It behaves exactly as `th:text` would on any hand-written element. It silently replaces whatever default-slot
+content was written between the tags. If both `th:text` and `th:utext` are present at once, the standard
+dialect's own precedence resolves it — this dialect adds no validation of its own.
 `th:insert`/`th:replace`/`th:include` are not supported this way.
 
 ## Named slots
 
-Add `c:name` to `<c:slot />` to define named slots. At the call site, assign content to a named slot with the `c:slot` attribute on a direct child element:
+Add `c:name` to `<c:slot />` to define named slots. At the call site, assign content to a named slot with the
+`c:slot` attribute on a direct child element:
 
 ```html
 <!-- card.html -->
@@ -85,11 +93,10 @@ Add `c:name` to `<c:slot />` to define named slots. At the call site, assign con
 
 ## Slot assignment scope
 
-`c:slot` follows the same rule as the native shadow-DOM `slot` attribute: it binds to the
-element's direct parent. Only direct children of a component tag are assigned to that
-component's slots. When components nest, each component assigns its own children —
-`c:slot` inside a nested component invocation is consumed by the inner component, not the
-outer one:
+`c:slot` follows the same rule as the native shadow-DOM `slot` attribute: it binds to the element's direct
+parent. Only direct children of a component tag are assigned to that component's slots. When components
+nest, each component assigns its own children. A `c:slot` inside a nested component invocation is consumed
+by the inner component, not the outer one:
 
 ```html
 <c:card>
@@ -101,23 +108,19 @@ outer one:
 </c:card>
 ```
 
-On elements deeper than a direct child (with no component in between), `c:slot` is inert:
-it has no effect and is kept in the rendered output, just like the native `slot` attribute
-on an element that is not a shadow-host child.
+On elements deeper than a direct child, with no component in between, `c:slot` is inert. It has no effect,
+and the dialect keeps it in the rendered output — the same as the native `slot` attribute on an element that
+is not a shadow-host child.
 
 ## `hasSlot()`
 
-`hasSlot()` checks whether the caller provided content for a slot — useful for conditionally rendering wrapping markup:
-
-```java
-public class Card extends CompositionComponent {
-    public Card(CompositionComponentContext context) {
-        super(context);
-    }
-}
-```
+`hasSlot()` checks whether the caller gave content for a slot. The named-slots example above uses it to
+decide whether to render the wrapping `<header>` and `<footer>` elements at all.
 
 - `hasSlot()` — checks the default slot
 - `hasSlot("name")` — checks a named slot
 
-`hasSlot()` (no-arg) agrees with fallback rendering about whitespace: indentation alone between a component's tags does not count as content, so it returns `false` there rather than `true` for a caller who passed nothing meaningful. `hasSlot("name")` is never affected, since a named slot can never end up whitespace-only.
+`hasSlot()` with no argument agrees with fallback rendering about whitespace. Indentation alone between a
+component's tags does not count as content, so it returns `false` there instead of `true` for a caller who
+gave nothing meaningful. `hasSlot("name")` is not affected this way — only an element can carry `c:slot`, and
+an element can never be whitespace-only.

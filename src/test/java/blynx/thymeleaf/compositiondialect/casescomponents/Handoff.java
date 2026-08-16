@@ -4,17 +4,9 @@ import blynx.thymeleaf.compositiondialect.CompositionComponent;
 import blynx.thymeleaf.compositiondialect.CompositionComponentContext;
 
 /** Passes the content it is given straight on into another component's slot. */
-public class Handoff extends CompositionComponent {
+public record Handoff(String title, CompositionComponentContext context) implements CompositionComponent {
 
-    private final String title;
-
-    public Handoff(CompositionComponentContext context) {
-        super(context);
-        Object raw = context.attributes().get("title");
-        this.title = raw != null ? raw.toString() : "untitled";
-    }
-
-    public String getTitle() {
-        return title;
+    public Handoff {
+        title = title != null ? title : "untitled";
     }
 }
