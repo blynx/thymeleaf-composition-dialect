@@ -36,11 +36,12 @@ See [Setup](docs/reference/setup.md) for all configuration options.
 
 ## Documentation
 
-- [Setup](docs/reference/setup.md) — standalone and Spring Boot configuration
+- [Setup](docs/reference/setup.md) — standalone and Spring Boot configuration, components from several sources
 - [Components](docs/reference/components.md) — components as records or classes, templates, naming
 - [Slots](docs/reference/slots.md) — default and named slots
 - [Attributes](docs/reference/attributes.md) — passing attributes, props, defaults, rest attributes
 - [Context](docs/reference/context.md) — locale, messages, variable scope
+- [Component libraries](docs/reference/libraries.md) — publishing components as a jar, and importing one
 
 ## Credits
 

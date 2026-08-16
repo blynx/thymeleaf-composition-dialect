@@ -5,17 +5,24 @@ plugins {
 }
 
 group = 'blynx.thymeleaf'
-version = '0.11.0'
+version = '0.12.0'
 
 repositories {
     mavenCentral()
 }
 
+def thymeleafVersion = '3.1.5.RELEASE'
+
 dependencies {
     implementation 'org.reflections:reflections:0.10.2'
-    implementation 'org.thymeleaf:thymeleaf:3.1.5.RELEASE'
+
+    // Provided, not transitive: this plugs into the application's own template engine, so the application
+    // decides the Thymeleaf version. Pulling one along would let a component library drag a conflicting
+    // Thymeleaf into an application that already has its own.
+    compileOnly "org.thymeleaf:thymeleaf:$thymeleafVersion"
     compileOnly 'org.springframework.boot:spring-boot-autoconfigure:3.5.0'
 
+    testImplementation "org.thymeleaf:thymeleaf:$thymeleafVersion"
     testImplementation 'org.junit.jupiter:junit-jupiter:5.14.4'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }

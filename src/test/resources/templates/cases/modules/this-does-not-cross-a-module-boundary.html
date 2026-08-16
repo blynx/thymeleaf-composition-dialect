@@ -1,0 +1,11 @@
+<!--
+  CASE      ${this} follows the template the markup was written in, and a module boundary is no
+            different from any other: content the page hands to an imported library's component cannot
+            read that component, and the library's own markup keeps reading itself.
+  EXPECT    NONE at the page and in the card's slot, while the card and badge still read their own
+-->
+<p id="at-page" th:text="${this == null ? 'NONE' : this.title}">?</p>
+
+<c:ds-card title="receiver">
+    <p id="in-lib-slot" th:text="${this == null ? 'NONE' : this.title}">?</p>
+</c:ds-card>

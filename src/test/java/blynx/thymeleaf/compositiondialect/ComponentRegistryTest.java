@@ -30,6 +30,10 @@ class ComponentRegistryTest {
             "blynx.thymeleaf.compositiondialect.registryfixtures.composition";
     private static final String PROPS_FIXTURES =
             "blynx.thymeleaf.compositiondialect.registryfixtures.props";
+    private static final String RESERVED_FIXTURES =
+            "blynx.thymeleaf.compositiondialect.registryfixtures.reserved";
+    private static final String COLLISION_ALPHA = COLLISION_FIXTURES + ".alpha";
+    private static final String COLLISION_BRAVO = COLLISION_FIXTURES + ".bravo";
 
     private ComponentRegistry scan(String prefix) {
         return ComponentRegistry.scan(PACKAGE, "testcomponents", prefix);
@@ -58,6 +62,7 @@ class ComponentRegistryTest {
         assertEquals("card", card.tagName());
         assertEquals("testcomponents/card", card.templatePath());
         assertEquals("c:card", card.qualifiedName());
+        assertEquals(new ComponentSource(PACKAGE, "testcomponents"), card.source());
     }
 
     @Test
@@ -97,13 +102,96 @@ class ComponentRegistryTest {
     }
 
     @Test
-    void aggregateMergesRegistriesAndExposesCrossPrefixCollisions() {
+    void aggregateMergesRegistriesAndExposesEveryClaimantOfATag() {
         ComponentRegistry merged = ComponentRegistry.aggregate(List.of(scan("c"), scan("x")));
 
         assertEquals(12, merged.components().size());
         assertEquals(List.of("c", "x"), List.copyOf(merged.byPrefix().keySet()));
-        // "card" now exists under both prefixes — the substrate Module Organization reads for collisions.
+        // "card" is now claimed twice; reporting that is requireNoCollisions', not the merge's.
         assertEquals(2, merged.byTagName().get("card").size());
+    }
+
+    @Test
+    void scanningSeveralSourcesMergesThemIntoOneRegistry() {
+        ComponentRegistry registry = ComponentRegistry.scan(List.of(
+                new ComponentSource(PACKAGE, "testcomponents"),
+                new ComponentSource(PROPS_FIXTURES)), "c");
+
+        assertEquals(8, registry.components().size());
+        assertTrue(registry.findByClass(Card.class).isPresent());
+        assertTrue(registry.findByClass(RecordProps.class).isPresent());
+        // One prefix over both, which is what makes the dialect's own grammar canonical across sources.
+        assertEquals(List.of("c"), List.copyOf(registry.byPrefix().keySet()));
+    }
+
+    @Test
+    void eachSourceKeepsItsOwnComponentsPath() {
+        ComponentRegistry registry = ComponentRegistry.scan(List.of(
+                new ComponentSource(PACKAGE, "testcomponents"),
+                new ComponentSource(PROPS_FIXTURES, "vendor/lib")), "c");
+
+        assertEquals("testcomponents/card", registry.findByClass(Card.class).orElseThrow().templatePath());
+        assertEquals("vendor/lib/record-props",
+                registry.findByClass(RecordProps.class).orElseThrow().templatePath());
+    }
+
+    @Test
+    void bySourcePackageSeparatesOneModulesComponentsFromAnothers() {
+        ComponentRegistry registry = ComponentRegistry.scan(List.of(
+                new ComponentSource(PACKAGE, "testcomponents"),
+                new ComponentSource(PROPS_FIXTURES)), "c");
+
+        assertEquals(List.of(PACKAGE, PROPS_FIXTURES).stream().sorted().toList(),
+                registry.bySourcePackage().keySet().stream().sorted().toList());
+        assertEquals(6, registry.bySourcePackage().get(PACKAGE).size());
+        assertEquals(2, registry.bySourcePackage().get(PROPS_FIXTURES).size());
+    }
+
+    @Test
+    void requireNoCollisionsSeesAClashOnlyTheMergedRegistryCanSee() {
+        ComponentRegistry alpha = ComponentRegistry.scan(new ComponentSource(COLLISION_ALPHA), "c");
+        ComponentRegistry bravo = ComponentRegistry.scan(new ComponentSource(COLLISION_BRAVO), "c");
+
+        // Neither source can see the clash on its own.
+        alpha.requireNoCollisions();
+        bravo.requireNoCollisions();
+
+        IllegalStateException thrown = org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalStateException.class,
+                () -> ComponentRegistry.aggregate(List.of(alpha, bravo)).requireNoCollisions());
+
+        assertTrue(thrown.getMessage().contains("<c:twin> is claimed by"), thrown.getMessage());
+        assertTrue(thrown.getMessage().contains("different component sources"), thrown.getMessage());
+        assertTrue(thrown.getMessage().contains(COLLISION_ALPHA), thrown.getMessage());
+        assertTrue(thrown.getMessage().contains(COLLISION_BRAVO), thrown.getMessage());
+    }
+
+    @Test
+    void aClashWithinOneSourceIsItsAuthorsOwnToRename() {
+        ComponentRegistry registry = ComponentRegistry.scan(COLLISION_FIXTURES, null, "c");
+
+        IllegalStateException thrown = org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalStateException.class, registry::requireNoCollisions);
+
+        assertTrue(thrown.getMessage().contains("Rename one of them."), thrown.getMessage());
+        assertFalse(thrown.getMessage().contains("different component sources"), thrown.getMessage());
+    }
+
+    @Test
+    void requireNoReservedTagNamesRejectsAComponentClaimingCSlot() {
+        ComponentRegistry registry = ComponentRegistry.scan(new ComponentSource(RESERVED_FIXTURES), "c");
+
+        IllegalStateException thrown = org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalStateException.class, registry::requireNoReservedTagNames);
+
+        assertTrue(thrown.getMessage().contains("<c:slot> is claimed by"), thrown.getMessage());
+        assertTrue(thrown.getMessage().contains(
+                "blynx.thymeleaf.compositiondialect.registryfixtures.reserved.Slot"), thrown.getMessage());
+    }
+
+    @Test
+    void requireNoReservedTagNamesPassesForOrdinaryComponents() {
+        scan("c").requireNoReservedTagNames();
     }
 
     @Test

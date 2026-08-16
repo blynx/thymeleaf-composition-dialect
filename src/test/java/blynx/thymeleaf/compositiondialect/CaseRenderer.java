@@ -32,6 +32,10 @@ final class CaseRenderer {
     private static final String COMPONENT_PACKAGE = "blynx.thymeleaf.compositiondialect.casescomponents";
     private static final String COMPONENTS_PATH = "casescomponents";
 
+    /** The imported component library the {@code modules/} cases use. See {@code libcomponents}. */
+    private static final String LIBRARY_PACKAGE = "blynx.thymeleaf.compositiondialect.libcomponents";
+    private static final String LIBRARY_PATH = "libcomponents";
+
     /** The sibling file holding what a case produces, when it has one. */
     static final String EXPECTED_SUFFIX = ".expected";
 
@@ -125,13 +129,18 @@ final class CaseRenderer {
         ClassLoaderTemplateResolver templates = new ClassLoaderTemplateResolver();
         templates.setPrefix("templates/");
         templates.setSuffix(".html");
-        templates.setResolvablePatterns(Set.of(CASES + "/**", COMPONENTS_PATH + "/**"));
+        templates.setResolvablePatterns(Set.of(CASES + "/**", COMPONENTS_PATH + "/**", LIBRARY_PATH + "/**"));
         templates.setCharacterEncoding("UTF-8");
         templates.setCacheable(false);
 
+        // Two sources in one dialect, as an application importing a component library has: every case in
+        // the suite renders through it, so the whole spec doubles as the evidence that a second source
+        // changes nothing about the first.
         TemplateEngine engine = new TemplateEngine();
         engine.addTemplateResolver(templates);
-        engine.addDialect(new CompositionDialect(COMPONENT_PACKAGE, COMPONENTS_PATH));
+        engine.addDialect(new CompositionDialect(
+                new ComponentSource(COMPONENT_PACKAGE, COMPONENTS_PATH),
+                new ComponentSource(LIBRARY_PACKAGE, LIBRARY_PATH)));
         return engine;
     }
 }

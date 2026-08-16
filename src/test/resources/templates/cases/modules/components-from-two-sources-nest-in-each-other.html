@@ -1,0 +1,17 @@
+<!--
+  CASE      An application component inside an imported library component's slot, and the same the other
+            way round. Which source a component was scanned from is settled at startup and means nothing
+            afterwards: nesting works in both directions and to any depth.
+  EXPECT    panel inside the card's body, and a card inside the panel's
+-->
+<c:ds-card title="outer card">
+    <c:panel title="inner panel">
+        <p id="app-in-lib">application content, inside the library's card</p>
+    </c:panel>
+</c:ds-card>
+
+<c:panel title="outer panel">
+    <c:ds-card title="inner card">
+        <p id="lib-in-app">library content, inside the application's panel</p>
+    </c:ds-card>
+</c:panel>

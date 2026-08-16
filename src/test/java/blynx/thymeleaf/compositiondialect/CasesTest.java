@@ -377,6 +377,42 @@ class CasesTest {
         }
     }
 
+    @Nested
+    @DisplayName("components from more than one source")
+    class Modules {
+
+        @Test
+        void aLibraryComponentUsesItsOwnComponents() {
+            String out = render("modules/a-library-component-uses-its-own-components");
+
+            assertTrue(at(out, "id=\"ds-card\"") < at(out, "id=\"ds-badge\""), out);
+            assertEquals("from the library", textOf(out, "ds-badge"), out);
+        }
+
+        @Test
+        void componentsFromTwoSourcesNestInEachOther() {
+            String out = render("modules/components-from-two-sources-nest-in-each-other");
+
+            // An application component inside the library's card…
+            assertTrue(at(out, "data-title=\"outer card\"") < at(out, "data-title=\"inner panel\""), out);
+            assertTrue(at(out, "data-title=\"inner panel\"") < at(out, "id=\"app-in-lib\""), out);
+            // …and the library's card inside an application component.
+            assertTrue(at(out, "data-title=\"outer panel\"") < at(out, "data-title=\"inner card\""), out);
+            assertTrue(at(out, "data-title=\"inner card\"") < at(out, "id=\"lib-in-app\""), out);
+        }
+
+        @Test
+        void thisDoesNotCrossAModuleBoundary() {
+            String out = render("modules/this-does-not-cross-a-module-boundary");
+
+            assertEquals("NONE", textOf(out, "at-page"), out);
+            assertEquals("NONE", textOf(out, "in-lib-slot"), out);
+            // The library's own markup still reads its own instance, on both sides of its internal call.
+            assertTrue(out.contains("data-title=\"receiver\""), out);
+            assertEquals("receiver", textOf(out, "ds-badge"), out);
+        }
+    }
+
     /**
      * Not a case: renders every case that keeps an {@code .expected.html}, which is what compares the two.
      * The tests above each render the cases they are about, so this adds nothing for those — it is here so

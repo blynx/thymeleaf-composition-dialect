@@ -1,0 +1,8 @@
+<!--
+  CASE      ds-card's own template reaches for ds-badge, another component of the same library. Both
+            were scanned from the library's source, but the reference is written exactly as any other
+            is — one prefix covers every source, so a library bakes nothing about its own registration
+            into the HTML it ships.
+  EXPECT    the badge renders inside the card, carrying the card's title
+-->
+<c:ds-card title="from the library" />

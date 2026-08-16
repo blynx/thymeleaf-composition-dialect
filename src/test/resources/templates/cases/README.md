@@ -23,6 +23,7 @@ assertions run.
 | `control-flow/` | `th:if` / `th:each` on a component tag |
 | `context/` | values a component publishes for its content — the dynamic counterpart to `${this}` |
 | `attributes/` | how attributes reach a component, and `c:rest` |
+| `modules/` | components scanned from more than one source, as an imported component library is |
 
 A case that needs a second template to exist — one to insert, say — keeps it beside itself as
 `<the-case>.target.html`, so the pair is obvious.
@@ -56,3 +57,9 @@ so that everything under `cases/` is a case:
 - `relay` demonstrates `c:rest`.
 - `inserter` pulls a plain Thymeleaf fragment (`inserter-body.html`, the only file in `casescomponents/`
   without a class) into its own template, for the insertion cases.
+
+A second set stands in for an **imported component library**: `templates/libcomponents/`, with classes in
+`src/java/…/libcomponents`. It is a separate `ComponentSource` with its own templates path, scanned into
+the same dialect, and its classes carry the library's own name — `DsCard` for `<c:ds-card>` — which is all
+that keeps its tags apart from the application's. Every case in the suite renders through that two-source
+dialect, so the whole spec is also the evidence that a second source changes nothing about the first.

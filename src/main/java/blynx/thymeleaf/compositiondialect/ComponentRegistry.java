@@ -22,16 +22,30 @@ import org.reflections.Reflections;
 /**
  * The single source of truth for component discovery, naming, and template-path rules.
  *
- * <p>Built once from a classpath scan (see {@link #scan}), it holds an immutable, deterministically
- * ordered list of {@link ComponentDescriptor}s plus indexes for the "what components exist?" queries
- * that Module Organization, the Component Playground, and Developer Tooling need. {@link CompositionDialect}
- * is a consumer of the registry rather than the place discovery lives.
+ * <p>Built from a classpath scan of one or more {@link ComponentSource}s (see {@link #scan}), it holds an
+ * immutable, deterministically ordered list of {@link ComponentDescriptor}s plus indexes for the "what
+ * components exist?" queries that Module Organization, the Component Playground, and Developer Tooling
+ * need. {@link CompositionDialect} is a consumer of the registry rather than the place discovery lives.
  */
 public final class ComponentRegistry {
+
+    /**
+     * Tag names this dialect's own grammar already claims, which a component may therefore not take.
+     * A class named {@code Slot} would otherwise register a processor for {@code c:slot} alongside
+     * {@link CompositionSlotPlacementProcessor}'s, and — that one running first, at a lower precedence —
+     * every use of it would fail with the placement processor's "not recognized as a slot marker" error
+     * instead of rendering.
+     *
+     * <p>{@code rest} is absent deliberately: {@code c:rest} is an attribute, and attribute and element
+     * names are matched separately, so a {@code <c:rest>} component collides with nothing.
+     * {@link CompositionCallerProcessor#TAG_NAME} is absent because {@link #toTagName} cannot produce it.
+     */
+    private static final Set<String> RESERVED_TAG_NAMES = Set.of("slot");
 
     private final List<ComponentDescriptor> components;
     private final Map<String, List<ComponentDescriptor>> byPrefix;
     private final Map<String, List<ComponentDescriptor>> byTagName;
+    private final Map<String, List<ComponentDescriptor>> bySourcePackage;
 
     private ComponentRegistry(List<ComponentDescriptor> descriptors) {
         List<ComponentDescriptor> sorted = new ArrayList<>(descriptors);
@@ -39,35 +53,46 @@ public final class ComponentRegistry {
         this.components = List.copyOf(sorted);
         this.byPrefix = groupBy(this.components, ComponentDescriptor::prefix);
         this.byTagName = groupBy(this.components, ComponentDescriptor::tagName);
+        this.bySourcePackage = groupBy(this.components, descriptor -> descriptor.source().componentPackage());
     }
 
     /**
-     * Discovers every {@link CompositionComponent} subtype in {@code componentPackage} and builds a
+     * Discovers every {@link CompositionComponent} subtype in {@code source}'s package and builds a
      * registry, deriving each descriptor's tag name and template path via {@link #toTagName} and
      * {@link #buildComponentPath}.
      */
-    public static ComponentRegistry scan(String componentPackage, String componentsPath, String prefix) {
+    public static ComponentRegistry scan(ComponentSource source, String prefix) {
         List<ComponentDescriptor> descriptors = new ArrayList<>();
         for (Class<? extends CompositionComponent> componentClass :
-                new Reflections(componentPackage).getSubTypesOf(CompositionComponent.class)) {
+                new Reflections(source.componentPackage()).getSubTypesOf(CompositionComponent.class)) {
             // getSubTypesOf is transitive and unfiltered: an abstract intermediate base would otherwise
             // register like a real component and only fail — as a raw InstantiationError — if rendered.
             if (Modifier.isAbstract(componentClass.getModifiers())) {
                 continue;
             }
             String tagName = toTagName(componentClass);
-            String templatePath = buildComponentPath(componentsPath, componentClass, tagName);
+            String templatePath = buildComponentPath(source.componentsPath(), componentClass, tagName);
             Set<String> props = readDeclaredProps(componentClass);
-            descriptors.add(new ComponentDescriptor(componentClass, prefix, tagName, templatePath, props));
+            descriptors.add(new ComponentDescriptor(componentClass, source, prefix, tagName, templatePath, props));
         }
         return new ComponentRegistry(descriptors);
     }
 
+    /** Scans every source and merges the results into the one registry a dialect is built from. */
+    public static ComponentRegistry scan(Collection<ComponentSource> sources, String prefix) {
+        return aggregate(sources.stream().map(source -> scan(source, prefix)).toList());
+    }
+
+    /** Convenience for the single-source case, where the path is the dialect's own {@code componentsPath}. */
+    public static ComponentRegistry scan(String componentPackage, String componentsPath, String prefix) {
+        return scan(new ComponentSource(componentPackage, componentsPath), prefix);
+    }
+
     /**
-     * Combines several registries into one unified view — the substrate for the cross-dialect,
-     * one-prefix-per-module direction. A tag name that appears under more than one prefix simply
-     * shows up as a multi-entry list in {@link #byTagName()}; detecting and rejecting collisions is
-     * Module Organization's concern, not this method's.
+     * Combines several registries into one unified view — how an application's own components and each
+     * imported component library's end up in a single dialect. Merging alone reports nothing: a tag
+     * claimed twice simply shows up as a multi-entry list in {@link #byTagName()}, and rejecting that is
+     * {@link #requireNoCollisions()}'s job, run once over the merged result.
      */
     public static ComponentRegistry aggregate(Collection<ComponentRegistry> registries) {
         List<ComponentDescriptor> all = new ArrayList<>();
@@ -82,23 +107,34 @@ public final class ComponentRegistry {
         return components;
     }
 
-    /** Components grouped by dialect prefix. Immutable. */
+    /**
+     * Components grouped by dialect prefix. Immutable. Every component of every source shares the one
+     * prefix, so this is a single entry unless registries built under different prefixes were aggregated
+     * by hand; {@link #bySourcePackage()} is what separates one module's components from another's.
+     */
     public Map<String, List<ComponentDescriptor>> byPrefix() {
         return byPrefix;
     }
 
     /**
      * Components grouped by tag name. Immutable. A key mapping to more than one descriptor is a
-     * cross-prefix tag collision.
+     * collision, whether the claimants came from one source or several.
      */
     public Map<String, List<ComponentDescriptor>> byTagName() {
         return byTagName;
     }
 
     /**
-     * Tags claimed by more than one component class, keyed by {@link ComponentDescriptor#qualifiedName()}
-     * rather than raw tag name — a tag reused across different prefixes is the intentional cross-dialect
-     * substrate {@link #aggregate} supports, not a collision. Immutable; empty when there are none.
+     * Components grouped by the package of the {@link ComponentSource} they were scanned from. Immutable.
+     * One entry per module — the application's own components, and each imported library's.
+     */
+    public Map<String, List<ComponentDescriptor>> bySourcePackage() {
+        return bySourcePackage;
+    }
+
+    /**
+     * Tags claimed by more than one component class, keyed by {@link ComponentDescriptor#qualifiedName()}.
+     * Immutable; empty when there are none.
      */
     public Map<String, List<ComponentDescriptor>> collisions() {
         Map<String, List<ComponentDescriptor>> byQualifiedName = groupBy(components, ComponentDescriptor::qualifiedName);
@@ -115,6 +151,10 @@ public final class ComponentRegistry {
      * Fails fast if any tag is claimed by more than one component class. Without this, one silently wins
      * a {@code HashSet} of processors built from the registry and the other becomes permanently
      * unreachable, with no error at all.
+     *
+     * <p>Run over the merged registry rather than per source: a component library and the application
+     * importing it both owning a {@code Button} is exactly the clash worth catching, and neither source
+     * can see it alone.
      */
     public void requireNoCollisions() {
         Map<String, List<ComponentDescriptor>> collisions = collisions();
@@ -123,11 +163,37 @@ public final class ComponentRegistry {
         }
         StringBuilder message = new StringBuilder(CompositionDialect.DIALECT_NAME
                 + ": duplicate component tag(s) detected — each must be unique:\n");
-        collisions.forEach((qualifiedName, descriptors) -> message.append("  <").append(qualifiedName)
-                .append("> is claimed by ")
-                .append(descriptors.stream().map(d -> d.componentClass().getName()).collect(Collectors.joining(", ")))
-                .append("\n"));
-        message.append("Rename the clashing component(s).");
+        collisions.forEach((qualifiedName, descriptors) -> {
+            message.append("  <").append(qualifiedName).append("> is claimed by ")
+                    .append(descriptors.stream().map(ComponentRegistry::describeClaimant)
+                            .collect(Collectors.joining(", ")))
+                    .append("\n");
+            message.append("    ").append(remedyFor(descriptors)).append("\n");
+        });
+        throw new IllegalStateException(message.toString());
+    }
+
+    /**
+     * Fails fast if a component claims a tag this dialect's own grammar already uses. Such a component
+     * registers successfully and then fails on every single use, with an error about slot markers that
+     * says nothing about the real cause.
+     */
+    public void requireNoReservedTagNames() {
+        List<ComponentDescriptor> reserved = components.stream()
+                .filter(descriptor -> RESERVED_TAG_NAMES.contains(descriptor.tagName()))
+                .toList();
+        if (reserved.isEmpty()) {
+            return;
+        }
+        StringBuilder message = new StringBuilder(CompositionDialect.DIALECT_NAME
+                + ": component tag(s) reserved by the dialect itself:\n");
+        for (ComponentDescriptor descriptor : reserved) {
+            message.append("  <").append(descriptor.qualifiedName()).append("> is claimed by ")
+                    .append(describeClaimant(descriptor)).append("\n");
+        }
+        message.append("Rename the component(s); ")
+                .append(RESERVED_TAG_NAMES.stream().sorted().collect(Collectors.joining(", ")))
+                .append(" belong to the dialect's own grammar.");
         throw new IllegalStateException(message.toString());
     }
 
@@ -146,6 +212,28 @@ public final class ComponentRegistry {
     /** PascalCase simple class name to kebab-case tag name, e.g. {@code MagicHeadings -> magic-headings}. */
     public static String toTagName(Class<?> componentClass) {
         return kebabCase(componentClass.getSimpleName());
+    }
+
+    private static String describeClaimant(ComponentDescriptor descriptor) {
+        return descriptor.componentClass().getName();
+    }
+
+    /**
+     * What to do about a collision, which depends on who owns the clashing components. Two classes in one
+     * source are one author's own problem; two sources clashing usually is not, because the tag names a
+     * component library ships are fixed by whoever wrote it.
+     */
+    private static String remedyFor(List<ComponentDescriptor> descriptors) {
+        Set<String> sources = descriptors.stream()
+                .map(descriptor -> descriptor.source().componentPackage())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (sources.size() == 1) {
+            return "Rename one of them.";
+        }
+        return "These come from different component sources (" + String.join(", ", sources)
+                + "), so rename whichever one you own — an imported library's tag names are its author's "
+                + "to change. A library keeps its components apart by naming its classes for itself, "
+                + "e.g. DsButton for <" + descriptors.getFirst().prefix() + ":ds-button>.";
     }
 
     /** camelCase or PascalCase to kebab-case, e.g. {@code autoHideSeconds -> auto-hide-seconds}. */
