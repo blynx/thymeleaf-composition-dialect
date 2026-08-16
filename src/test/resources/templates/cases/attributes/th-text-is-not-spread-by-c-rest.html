@@ -2,6 +2,8 @@
   CASE      th:text/th:utext on a component tag are relocated onto the synthetic default-slot content,
             so they must not also leak into c:rest as unevaluated raw "text"/"utext" attributes, the way
             any other attribute the component itself doesn't read would.
-  EXPECT    the plain attribute is spread by c:rest; no "text" or "utext" attribute appears alongside it
+  EXPECT    each one fills the default slot, and the plain attribute beside it is spread by c:rest;
+            no "text" or "utext" attribute appears anywhere
 -->
-<c:relay th:text="${caption}" th:utext="${'<em>raw</em>'}" quoted="a" />
+<c:relay th:text="${caption}" quoted="a" />
+<c:relay th:utext="${'<em>raw</em>'}" quoted="b" />

@@ -14,12 +14,14 @@ Add the dialect to Thymeleaf:
 templateEngine.addDialect(new CompositionDialect("com.example.demo.components"));
 ```
 
+For more on locating templates, see [Components](components.md#component-template).
+
 ### `CompositionDialect` parameters
 
 | Parameter | Required | Description |
 |---|---|---|
 | `componentPackage` | yes | Package to scan for components |
-| `templatesPath` | no | Sub-path under the Thymeleaf templates root where component templates live |
+| `templatesPath` | no | Sub-path under the Thymeleaf templates root where component templates live (default: the templates root itself) |
 | `prefix` | no | Tag prefix (default: `c`) |
 
 ## Spring Boot
@@ -34,8 +36,27 @@ thymeleaf.composition.templates-path=components
 | Property | Required | Description |
 |---|---|---|
 | `thymeleaf.composition.component-package` | no | Package to scan for your own components — omit it if you only import component libraries |
-| `thymeleaf.composition.templates-path` | no | Sub-path under the templates root |
+| `thymeleaf.composition.templates-path` | no | Sub-path under the templates root (default: the templates root itself) |
 | `thymeleaf.composition.prefix` | no | Tag prefix (default: `c`) |
+| `thymeleaf.composition.verify-templates` | no | Check at startup that every component has a template (default: `true`) |
+
+### Every component's template is checked at startup
+
+With `verify-templates` on, the application fails to start if any registered component has no template
+file, listing every one of them at once:
+
+```
+Composition Dialect: no template found for component(s):
+  <c:order-summary> (com.example.components.OrderSummary) expects components/order-summary.html
+```
+
+Turn the check off if you use a resolver that cannot find its templates until later than startup.
+
+Outside Spring, call it yourself once the engine is built:
+
+```java
+dialect.getRegistry().requireResolvableTemplates(engine.getConfiguration());
+```
 
 For more control, declare your own bean. Auto-configuration backs off automatically when you do:
 
@@ -49,7 +70,7 @@ class Config {
 }
 ```
 
-## More than one source
+## Component Libraries
 
 Components can come from several places at once — your own, plus each component library you import. Each is a `ComponentSource`: a package to scan, and the templates sub-path that package's templates live under.
 

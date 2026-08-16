@@ -1,0 +1,7 @@
+<!--
+  CASE      A misspelled slot name at the call site asks for a slot no marker claims, so the content would
+            be rendered nowhere at all — and a page that silently drops it looks exactly like one that was
+            passed nothing. The component's declared names are known when its fragment loads, so say so.
+  EXPECT    fails, naming the slot asked for and the ones layout actually declares
+-->
+<c:layout><b c:slot="headr" id="lost">meant for the header</b></c:layout>

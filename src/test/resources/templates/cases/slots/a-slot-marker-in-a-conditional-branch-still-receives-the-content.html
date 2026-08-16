@@ -1,0 +1,10 @@
+<!--
+  CASE      branched-slot.html writes the same slot once per branch — <h1>, <h2>, <p> — and lets th:if pick
+            one per render, which is what a component whose tag name is not fixed has to do. The markers are
+            found when the template is parsed, before any th:if has run, so at that point all three exist and
+            nothing can yet know which one will survive.
+  EXPECT    the content lands in whichever branch renders, here <h2>, not only in the first marker written;
+            a call that passes nothing still gets that branch's own fallback
+-->
+<c:branched-slot level="2">given</c:branched-slot>
+<c:branched-slot level="3" />

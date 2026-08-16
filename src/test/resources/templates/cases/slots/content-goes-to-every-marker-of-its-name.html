@@ -1,0 +1,10 @@
+<!--
+  CASE      repeated-slot.html names the slot "tag" twice with nothing conditional between them, so both
+            markers really do render. Content written once therefore comes out twice, duplicate id and all.
+            Native <slot> gives it to the first match only, but it matches against a live tree; markers here
+            are found before any th:if around them has run, so first-wins would bet on a marker that may not
+            render at all — see a-slot-marker-in-a-conditional-branch-still-receives-the-content.
+  EXPECT    both markers take the content and neither shows its fallback; the duplication is visible in the
+            output, which is the point, where losing that bet would not have been
+-->
+<c:repeated-slot><b c:slot="tag" id="given">given</b></c:repeated-slot>

@@ -1,0 +1,7 @@
+<!--
+  CASE      The same rule for the default slot: repeated-slot.html declares only "tag", so a body written
+            between its tags has nowhere to go. Whitespace alone is still exempt — indentation between a
+            component's tags is not content anyone passed.
+  EXPECT    fails, saying the component declares no default slot
+-->
+<c:repeated-slot>a body it cannot place</c:repeated-slot>

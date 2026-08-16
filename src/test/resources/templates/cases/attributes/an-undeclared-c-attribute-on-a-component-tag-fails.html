@@ -1,0 +1,7 @@
+<!--
+  CASE      c: is the prop channel and nothing else: it never reaches c:rest, so a c:-prefixed attribute
+            naming no declared prop can only be a mistake — most often a typo of an actual prop name.
+            Relay declares no props at all, so any c:-prefixed attribute on it fails.
+  EXPECT    fails, naming the attribute and the component
+-->
+<c:relay c:unknown-prop="${1}" />

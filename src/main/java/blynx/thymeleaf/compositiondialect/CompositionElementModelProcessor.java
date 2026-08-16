@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.thymeleaf.IEngineConfiguration;
 import org.thymeleaf.cache.ICacheEntryValidity;
@@ -84,22 +86,31 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
 
     // The standard dialect's prefix is configurable, so th:text/th:utext can only be resolved once we
     // have an IEngineConfiguration in hand; cached the same way as slotAttributeName above.
-    private volatile StandardTextAttributes standardTextAttributes = null;
+    private volatile StandardAttributes standardTextAttributes = null;
 
     /**
      * Events between slot markers; {@code segments.length == slotMarkerNames.length + 1}.
      * {@code fallbacks[i]} holds marker {@code i}'s fallback content when it was written in paired form
      * ({@code <c:slot>...</c:slot>}), {@code null} when it was self-closing.
+     *
+     * <p>{@code declaredSlotNames} is derived from {@code slotMarkerNames} and kept here so it costs nothing
+     * per render — the same reason the segments are pre-split at all.
      */
-    private record FragmentInfo(IModel[] segments, String[] slotMarkerNames, IModel[] fallbacks) {
+    private record FragmentInfo(IModel[] segments, String[] slotMarkerNames, IModel[] fallbacks,
+                                Set<String> declaredSlotNames) {
+
+        static FragmentInfo of(IModel[] segments, String[] slotMarkerNames, IModel[] fallbacks) {
+            return new FragmentInfo(segments, slotMarkerNames, fallbacks,
+                    Set.copyOf(List.of(slotMarkerNames)));
+        }
     }
 
     private record CachedFragment(FragmentInfo info, ICacheEntryValidity validity) {
     }
 
-    /** The standard dialect's {@code th:text}/{@code th:utext}, resolved under its configured prefix. */
-    private record StandardTextAttributes(AttributeName text, AttributeName utext, String textCompleteName,
-                                          String utextCompleteName, String blockTagName) {
+    /** The standard dialect's prefix and the names of its own that this processor handles specially. */
+    private record StandardAttributes(String prefix, AttributeName text, AttributeName utext,
+                                      String textCompleteName, String utextCompleteName, String blockTagName) {
     }
 
     public CompositionElementModelProcessor(String dialectPrefix, ComponentDescriptor descriptor) {
@@ -119,7 +130,7 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         FragmentInfo fragment = getOrLoadFragment(context);
         IModelFactory modelFactory = context.getModelFactory();
         IProcessableElementTag rootElement = (IProcessableElementTag) tag.get(0);
-        StandardTextAttributes textAttrs = standardTextAttributes(context.getConfiguration());
+        StandardAttributes textAttrs = standardTextAttributes(context.getConfiguration());
 
         Map<String, IModel> slots = extractSlots(tag, modelFactory, slotAttributeName(context.getConfiguration()));
         removeBlankDefaultSlot(slots);
@@ -129,6 +140,9 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
             // own "replaces whatever body was there" behavior on a hand-written element.
             slots.put(CompositionComponent.DEFAULT_SLOT, textShorthand);
         }
+        // After the blank-default removal and the th:text shorthand above, so that indentation-only bodies
+        // stay exempt and th:text is checked like the slot content it becomes.
+        requireOnlyDeclaredSlots(slots.keySet(), fragment);
         Map<String, Object> attrs = extractAttrs(rootElement, context, textAttrs);
 
         CompositionComponentContext componentContext = new CompositionComponentContext(
@@ -203,7 +217,7 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         }
         segments.add(currentSegment);
 
-        FragmentInfo info = new FragmentInfo(segments.toArray(new IModel[0]), names.toArray(new String[0]),
+        FragmentInfo info = FragmentInfo.of(segments.toArray(new IModel[0]), names.toArray(new String[0]),
                 fallbacks.toArray(new IModel[0]));
         // Cache only cacheable templates and re-check validity per hit (dev-mode edits, TTL expiry).
         // Not flushed by TemplateEngine.clearTemplateCaches().
@@ -263,6 +277,14 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
      * outside it and must keep reading the {@code this} that was in effect there. A slot the caller left
      * empty falls back to its own fallback content, if it has any — added unwrapped, since a fallback is
      * the component's own markup and must keep reading this component's {@code this}, not step back out.
+     *
+     * <p>Content goes to <em>every</em> marker of its name, not only to the first as native {@code <slot>}
+     * resolves it. Native slots are matched against a live tree, where a slot either exists or does not;
+     * markers here are found while the fragment is parsed, before any {@code th:if} on the markup around
+     * them has run. Filling only the first would mean betting on a marker that may not render at all — and
+     * it is the branch-per-marker shape, one {@code th:if} per heading level, that repeats a name in the
+     * first place. Two markers that really do both render duplicate the content, which is visible in the
+     * output; the bet lost silently.
      */
     private void renderFragmentInto(IModel target, FragmentInfo fragment, Map<String, IModel> slots,
                                     IModelFactory modelFactory) {
@@ -282,6 +304,38 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
             }
             target.addModel(segments[i + 1]);
         }
+    }
+
+    /**
+     * Rejects content the component has nowhere to put — a misspelled {@code c:slot} name at the call site,
+     * or a body given to a component that declares no default slot. Such content is not rendered anywhere,
+     * and silently dropping it makes the mistake indistinguishable from having passed nothing at all.
+     *
+     * <p>A marker under a {@code th:if} still counts as declared: markers are split out when the fragment
+     * is parsed, before any conditional processing, so a component may still decide per render whether to
+     * render the slot it declares — which is what {@code hasSlot} is for.
+     */
+    private void requireOnlyDeclaredSlots(Set<String> given, FragmentInfo fragment) {
+        Set<String> declared = fragment.declaredSlotNames();
+        if (declared.containsAll(given)) {
+            return;
+        }
+        throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME
+                + ": <" + dialectPrefix + ":" + elementName + "> was given content it declares no slot for: "
+                + describeSlots(given.stream().filter(name -> !declared.contains(name))) + ". "
+                // No slots at all usually means the marker itself is wrong rather than the call site, and
+                // the marker never reaches the processor that would say so — it is consumed while the
+                // fragment loads, or not recognized as a marker in the first place.
+                + (declared.isEmpty()
+                        ? "It declares no slots at all — check that its own slot markers are spelled correctly"
+                        : "It declares " + describeSlots(declared.stream()))
+                + " (" + componentPath + ".html).");
+    }
+
+    private static String describeSlots(Stream<String> names) {
+        return names.map(name -> name.isEmpty() ? "a default slot" : "slot \"" + name + "\"")
+                .sorted()
+                .collect(Collectors.joining(", "));
     }
 
     private Map<String, IModel> extractSlots(IModel tag, IModelFactory modelFactory, AttributeName slotAttr) {
@@ -360,7 +414,7 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
      * <p>Returns {@code null} when neither attribute is present, or when the standard dialect isn't
      * configured at all (in which case neither attribute could mean anything).
      */
-    private IModel textShorthandSlotContent(IProcessableElementTag rootElement, StandardTextAttributes textAttrs,
+    private IModel textShorthandSlotContent(IProcessableElementTag rootElement, StandardAttributes textAttrs,
                                             IModelFactory modelFactory) {
         if (textAttrs == null) {
             return null;
@@ -385,8 +439,62 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         return content;
     }
 
+    /**
+     * Rejects the {@code th:} attributes whose meaning a component tag cannot carry. Everything else under
+     * the standard prefix is evaluated and handed over as the prop of that name — which is exactly what the
+     * standard dialect's own default attribute processor would have done with it, so {@code th:title} on a
+     * component means the same "evaluate this and call it title" it means anywhere else.
+     *
+     * <p>The ones listed here cannot: their value is not a single expression ({@code th:attr},
+     * {@code th:with}, {@code th:remove}, {@code th:inline}, {@code th:fragment}), or it modifies rather
+     * than sets ({@code th:classappend}), or it scopes a subtree that no longer exists by the time a
+     * component has replaced its own tag ({@code th:object}), or it needs form binding this never sees
+     * ({@code th:field}). Note that control flow is absent deliberately: {@code th:if}, {@code th:unless},
+     * {@code th:each}, {@code th:switch} and {@code th:case} all run at lower precedences than
+     * {@link #PRECEDENCE} and are consumed before this processor ever sees the tag, which is what
+     * {@code CompositionElementModelProcessorTest} pins.
+     */
+    static final Set<String> UNSUPPORTED_STANDARD_ATTRIBUTES = Set.of(
+            "attr", "attrappend", "attrprepend",
+            "with", "object",
+            "classappend", "styleappend",
+            "alt-title", "lang-xmllang",
+            "fragment", "remove", "inline", "assert", "ref",
+            "field", "errors", "errorclass");
+
+    private void requireSupportedStandardAttribute(String plainAttributeName, StandardAttributes standard) {
+        if (!UNSUPPORTED_STANDARD_ATTRIBUTES.contains(plainAttributeName)) {
+            return;
+        }
+        throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME + ": "
+                + standard.prefix() + ":" + plainAttributeName + " cannot be used on the <" + dialectPrefix
+                + ":" + elementName + "> tag. A component tag is replaced by the component's own markup "
+                + "before that attribute would run, so the only thing it could be is a prop — and its value "
+                + "is not one. Put it on an element inside " + componentPath + ".html instead, or pass a "
+                + "value with " + dialectPrefix + ": and let the component's template apply it.");
+    }
+
+    /**
+     * Rejects a {@code c:}-prefixed attribute that names no declared prop. {@code c:} is the prop channel
+     * and nothing else — unlike a plain or {@code th:}-prefixed attribute, its value is never meant to
+     * reach {@code c:rest}, so a name the component does not declare can only be a mistake (most often a
+     * typo of an actual prop name) rather than a deliberate pass-through attribute.
+     */
+    private void requireDeclaredProp(String plainAttributeName, StandardAttributes textAttrs) {
+        if (props.contains(plainAttributeName)) {
+            return;
+        }
+        String standardPrefix = textAttrs != null ? textAttrs.prefix() : "th";
+        throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME + ": "
+                + dialectPrefix + ":" + plainAttributeName + " was used on <" + dialectPrefix + ":" + elementName
+                + ">, but \"" + elementName + "\" (" + componentClass.getName() + ") declares no prop named \""
+                + plainAttributeName + "\". " + dialectPrefix + ": only sets declared props, so it can't be used "
+                + "to pass an attribute through to " + dialectPrefix + ":rest — write " + plainAttributeName
+                + "=\"...\" or " + standardPrefix + ":" + plainAttributeName + "=\"...\" for that instead.");
+    }
+
     private Map<String, Object> extractAttrs(IProcessableElementTag rootElement, ITemplateContext context,
-                                             StandardTextAttributes textAttrs) {
+                                             StandardAttributes textAttrs) {
         var allAttributes = rootElement.getAllAttributes();
         Map<String, Object> attrs = HashMap.newHashMap(allAttributes.length);
         var expressionParser = StandardExpressions.getExpressionParser(context.getConfiguration());
@@ -398,9 +506,16 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
                 continue;
             }
             String plainAttributeName = attributeName.getAttributeName();
-            if (dialectPrefix.equals(attributeName.getPrefix())) {
+            String prefix = attributeName.getPrefix();
+            if (dialectPrefix.equals(prefix)) {
+                requireDeclaredProp(plainAttributeName, textAttrs);
                 attrs.put(plainAttributeName,
                         expressionParser.parseExpression(context, attr.getValue()).execute(context));
+            } else if (textAttrs != null && textAttrs.prefix().equals(prefix)) {
+                requireSupportedStandardAttribute(plainAttributeName, textAttrs);
+                attrs.put(plainAttributeName, attr.getValue() == null
+                        ? null
+                        : expressionParser.parseExpression(context, attr.getValue()).execute(context));
             } else {
                 attrs.put(plainAttributeName, attr.getValue());
             }
@@ -435,8 +550,8 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
      * configured with, rather than hardcoding {@code "th"}. {@code null} when the standard dialect isn't
      * present at all.
      */
-    private StandardTextAttributes standardTextAttributes(IEngineConfiguration configuration) {
-        StandardTextAttributes cached = standardTextAttributes;
+    private StandardAttributes standardTextAttributes(IEngineConfiguration configuration) {
+        StandardAttributes cached = standardTextAttributes;
         if (cached != null) {
             return cached;
         }
@@ -446,7 +561,8 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         }
         // Benign race, as with slotAttributeName above: every thread resolves the same interned instances.
         var attributeDefinitions = configuration.getAttributeDefinitions();
-        StandardTextAttributes resolved = new StandardTextAttributes(
+        StandardAttributes resolved = new StandardAttributes(
+                standardPrefix,
                 attributeDefinitions.forName(getTemplateMode(), standardPrefix, "text").getAttributeName(),
                 attributeDefinitions.forName(getTemplateMode(), standardPrefix, "utext").getAttributeName(),
                 standardPrefix + ":text",

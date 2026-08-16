@@ -18,6 +18,9 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.reflections.Reflections;
+import org.thymeleaf.IEngineConfiguration;
+import org.thymeleaf.templateresolver.ITemplateResolver;
+import org.thymeleaf.templateresolver.TemplateResolution;
 
 /**
  * The single source of truth for component discovery, naming, and template-path rules.
@@ -195,6 +198,56 @@ public final class ComponentRegistry {
                 .append(RESERVED_TAG_NAMES.stream().sorted().collect(Collectors.joining(", ")))
                 .append(" belong to the dialect's own grammar.");
         throw new IllegalStateException(message.toString());
+    }
+
+    /**
+     * Components whose template no resolver can find, in registry order; empty when every one resolves.
+     * Needs the engine's configuration, so it can only run once the engine exists — unlike the collision
+     * and reserved-name checks, which the dialect can make on its own at construction.
+     */
+    public List<ComponentDescriptor> unresolvableTemplates(IEngineConfiguration configuration) {
+        return components.stream().filter(descriptor -> !resolves(configuration, descriptor.templatePath())).toList();
+    }
+
+    /**
+     * Fails fast if any component's template is missing. Without this the first render of that one
+     * component fails, which can be a long way from startup and is per-component: a renamed class whose
+     * template file kept the old name is the usual cause, and it stays invisible until someone opens the
+     * page that uses it.
+     *
+     * <p>Existence only. Whether the template <em>parses</em>, and whether its slot markers are
+     * well-formed, is still settled when the fragment first loads — that needs a template context, which
+     * does not exist outside a render.
+     */
+    public void requireResolvableTemplates(IEngineConfiguration configuration) {
+        List<ComponentDescriptor> unresolvable = unresolvableTemplates(configuration);
+        if (unresolvable.isEmpty()) {
+            return;
+        }
+        StringBuilder message = new StringBuilder(CompositionDialect.DIALECT_NAME
+                + ": no template found for component(s):\n");
+        for (ComponentDescriptor descriptor : unresolvable) {
+            message.append("  <").append(descriptor.qualifiedName()).append("> (")
+                    .append(describeClaimant(descriptor)).append(") expects ")
+                    .append(descriptor.templatePath()).append(".html\n");
+        }
+        message.append("Each path is the source's templatesPath plus the kebab-cased class name, resolved "
+                + "under the Thymeleaf templates root. Check the file name matches the class name, and that "
+                + "the source's templatesPath is right.");
+        throw new IllegalStateException(message.toString());
+    }
+
+    /** Mirrors how the engine resolves a template: first resolver that claims the path decides. */
+    private static boolean resolves(IEngineConfiguration configuration, String templatePath) {
+        for (ITemplateResolver resolver : configuration.getTemplateResolvers()) {
+            TemplateResolution resolution = resolver.resolveTemplate(configuration, null, templatePath, null);
+            if (resolution == null) {
+                continue;
+            }
+            // A resolver configured to check existence has already done it; otherwise ask the resource.
+            return resolution.isTemplateResourceExistenceVerified() || resolution.getTemplateResource().exists();
+        }
+        return false;
     }
 
     /** The descriptor for a component class, if it is registered. */

@@ -1,0 +1,3 @@
+<h1 th:if="${this.level == 1}"><c:slot>fallback one</c:slot></h1>
+<h2 th:if="${this.level == 2}"><c:slot>fallback two</c:slot></h2>
+<p th:if="${this.level > 2}"><c:slot>fallback rest</c:slot></p>

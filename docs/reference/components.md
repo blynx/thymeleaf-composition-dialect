@@ -10,7 +10,7 @@ The class name sets the tag name. `PascalCase` becomes `kebab-case`:
 |---|---|
 | `Button` | `<c:button />` |
 | `NavBar` | `<c:nav-bar />` |
-| `StatBox` | `<c:stat-box />` |
+| `SuperFancyElement` | `<c:super-fancy-element />` |
 
 ## Component class
 

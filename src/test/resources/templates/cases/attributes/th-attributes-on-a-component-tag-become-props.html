@@ -1,0 +1,8 @@
+<!--
+  CASE      th: on a component tag means what it means anywhere else — evaluate this expression and call it
+            by that name — so it arrives as a prop under the plain name, and c:rest spreads it like any
+            other unread attribute. Without this it was scraped as the raw, unevaluated string, because a
+            component tag is replaced before the standard dialect's own processors would have run.
+  EXPECT    both th: values arrive evaluated, alongside the plain attribute
+-->
+<c:relay th:title="${caption}" th:disabled="${true}" plain="kept" />

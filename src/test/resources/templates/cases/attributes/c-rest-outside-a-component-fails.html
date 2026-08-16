@@ -1,0 +1,7 @@
+<!--
+  CASE      c:rest spreads the attributes of the component whose template it is written in. Written in a
+            page, there is no such component and no attributes to spread — the author meant something that
+            cannot happen, so it is an error rather than a silent no-op.
+  EXPECT    fails: c:rest was used where no component is rendering
+-->
+<div c:rest>nothing to spread here</div>

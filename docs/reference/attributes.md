@@ -2,13 +2,53 @@
 
 ## Passing attributes
 
-Plain attributes arrive as strings. Attributes prefixed with `c:` are evaluated as Thymeleaf expressions
-before the dialect passes them on:
+Composition dialect brings a new type of attribute with the dialect prefix `c:`.
+It is evaluated as Thymeleaf expression just like `th:`-attributes, but it names a prop
+and only a prop — it never ends up in `restAttributes`/`c:rest`, so a `c:`-prefixed attribute the component
+does not declare as a prop can only be a mistake, and fails immediately rather than silently vanishing:
 
 ```html
-<c:button variant="danger" />              <!-- variant = "danger" (string) -->
-<c:button c:variant="${currentVariant}" /> <!-- variant = value of currentVariant -->
+<c:button c:variant="${currentVariant}" />  <!-- fine: "variant" is a declared prop -->
+<c:button c:tabindex="${idx}" />            <!-- fails: "tabindex" is not a declared prop -->
+<c:button th:tabindex="${idx}" />           <!-- passes through to c:rest instead -->
 ```
+
+Plain attributes arrive as strings. Attributes prefixed with `th:` are evaluated as Thymeleaf expressions
+before the dialect passes them on — that is already what `th:` means on any element, evaluate this
+expression and call it by that name. On a component tag the result is a prop rather than an HTML attribute,
+so `th:title`, `th:class` and `th:disabled` all arrive under their plain names and end up in
+`restAttributes`/`c:rest` unless the component declares them as props:
+
+```html
+<c:button variant="danger" />               <!-- variant = "danger" (string) -->
+<c:button th:variant="${currentVariant}" /> <!-- variant = value of currentVariant -->
+```
+
+Reach for `th:` (or a plain attribute) whenever the value is meant to pass through as an HTML attribute,
+whether or not the component happens to declare a prop of that name; reach for `c:` only for a value that is
+specifically meant to reach a declared prop.
+
+Note that the prefix is *dropped*: `title`, `c:title` and `th:title` all name the same prop (assuming
+`title` is declared), and writing more than one spelling of it on a tag leaves the last one in source order
+winning. Only `c:` and `th:` are evaluated; any other prefix is passed through as its raw, unevaluated
+string.
+
+### Standard attributes a component tag cannot carry
+
+A component tag is replaced by the component's own markup before most of the standard dialect would run, so
+the attributes whose meaning depends on modifying *that tag* have nothing left to act on and no prop they
+could sensibly become. These are rejected rather than quietly scraped as strings:
+
+`th:attr`, `th:attrappend`, `th:attrprepend`, `th:with`, `th:object`, `th:classappend`, `th:styleappend`,
+`th:alt-title`, `th:lang-xmllang`, `th:fragment`, `th:remove`, `th:inline`, `th:assert`, `th:ref`,
+`th:field`, `th:errors`, `th:errorclass`
+
+Put them on an element inside the component's own template instead, or declare the value as a prop and pass
+it with `c:`, letting the template apply it.
+
+Control flow is unaffected — `th:if`, `th:unless`, `th:each`, `th:switch` and `th:case` run *before* the
+component takes over its tag, so they decide whether and how often the component renders. See
+[components](components.md).
 
 In a record, each component other than `context` binds automatically from the attribute of the same name,
 kebab-cased, and is coerced to its declared type — `String`, `boolean`/`Boolean`, `int`/`Integer`,
@@ -85,8 +125,14 @@ if (rawType != null && !Set.of("button", "submit", "reset").contains(rawType.toS
 }
 ```
 
-This also means you can tell what a component accepts from its declaration alone, without rendering it. A
-class with no `@Prop` fields at all simply has no props.
+This read-without-declaring pattern only works for a plain or `th:`-prefixed `type` at the call site. A
+`c:`-prefixed one has no such escape: `c:` always names a prop, so `c:type` on a component that does not
+declare `type` fails before the constructor above ever runs, regardless of whether the constructor would
+have read it. Use `th:type="${...}"` for a dynamic value that is meant to be read this way.
+
+This also means you can tell what a component accepts from its declaration alone, without rendering it —
+every `c:`-prefixed name that can legally appear on its tag is exactly its declared props. A class with no
+`@Prop` fields at all simply has no props.
 
 ## Attribute defaults
 
@@ -165,6 +211,10 @@ onto that element:
 
 `variant` is a declared prop. `type` and `disabled` are not, so they pass through to the element, whether or
 not the component reads them.
+
+Which attributes those are is decided by the component whose template `c:rest` is written in, so it only
+means something there. In a page, or in content being passed to a component, there is nothing for it to
+spread and it is an error — the same as a misplaced [`c:slot`](slots.md#fallback-content).
 
 ### `restAttributes` — access programmatically
 

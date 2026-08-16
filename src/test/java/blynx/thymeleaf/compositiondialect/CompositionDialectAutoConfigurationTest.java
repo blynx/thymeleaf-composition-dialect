@@ -3,6 +3,7 @@ package blynx.thymeleaf.compositiondialect;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -12,6 +13,8 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.thymeleaf.TemplateEngine;
+import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
 
 /**
  * The Spring Boot path, which nothing else in the suite runs. Property names reach
@@ -142,12 +145,72 @@ class CompositionDialectAutoConfigurationTest {
                 });
     }
 
+    /**
+     * The template check runs as part of bringing the context up, so a component whose template is missing
+     * fails startup rather than the first request that needs it. Here the templates path is left unset, so
+     * every path resolves to the templates root, where none of these components' files are.
+     */
+    @Test
+    void aMissingComponentTemplateFailsStartup() {
+        runner.withUserConfiguration(TemplateEngineConfiguration.class)
+                .withPropertyValues("thymeleaf.composition.component-package=" + APP_PACKAGE)
+                .run(context -> {
+                    assertNotNull(context.getStartupFailure());
+
+                    String message = String.valueOf(rootCauseOf(context.getStartupFailure()).getMessage());
+                    assertTrue(message.contains("no template found"), message);
+                    assertTrue(message.contains("<c:card>"), message);
+                });
+    }
+
+    @Test
+    void templatesThatAllResolveStartCleanly() {
+        runner.withUserConfiguration(TemplateEngineConfiguration.class)
+                .withPropertyValues(
+                        "thymeleaf.composition.component-package=" + APP_PACKAGE,
+                        "thymeleaf.composition.templates-path=testcomponents")
+                .run(context -> assertNull(context.getStartupFailure()));
+    }
+
+    @Test
+    void theTemplateCheckCanBeTurnedOff() {
+        runner.withUserConfiguration(TemplateEngineConfiguration.class)
+                .withPropertyValues(
+                        "thymeleaf.composition.component-package=" + APP_PACKAGE,
+                        "thymeleaf.composition.verify-templates=false")
+                .run(context -> assertNull(context.getStartupFailure()));
+    }
+
+    /** Every other test here runs without one, which is why the check has to tolerate its absence. */
+    @Test
+    void withNoTemplateEngineThereIsNothingToVerifyAgainst() {
+        runner.withPropertyValues("thymeleaf.composition.component-package=" + APP_PACKAGE)
+                .run(context -> assertNull(context.getStartupFailure()));
+    }
+
     private static Throwable rootCauseOf(Throwable thrown) {
         Throwable root = thrown;
         while (root.getCause() != null) {
             root = root.getCause();
         }
         return root;
+    }
+
+    /** Stands in for the engine Spring Boot's own Thymeleaf auto-configuration would have provided. */
+    @Configuration(proxyBeanMethods = false)
+    static class TemplateEngineConfiguration {
+
+        @Bean
+        TemplateEngine templateEngine() {
+            ClassLoaderTemplateResolver templates = new ClassLoaderTemplateResolver();
+            templates.setPrefix("templates/");
+            templates.setSuffix(".html");
+            templates.setCharacterEncoding("UTF-8");
+
+            TemplateEngine engine = new TemplateEngine();
+            engine.addTemplateResolver(templates);
+            return engine;
+        }
     }
 
     @Configuration(proxyBeanMethods = false)

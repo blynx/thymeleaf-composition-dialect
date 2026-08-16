@@ -4,11 +4,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.thymeleaf.ThymeleafAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.thymeleaf.TemplateEngine;
 
 /**
  * Builds the one dialect from the application's own components plus every imported component library's.
@@ -60,5 +62,29 @@ public class CompositionDialectAutoConfiguration {
     @ConditionalOnMissingBean
     public ComponentRegistry componentRegistry(List<CompositionDialect> dialects) {
         return ComponentRegistry.aggregate(dialects.stream().map(CompositionDialect::getRegistry).toList());
+    }
+
+    /**
+     * Checks every component's template exists, once, after the engine has been built.
+     *
+     * <p>A {@link SmartInitializingSingleton} rather than an {@code ApplicationRunner}: it runs as part of
+     * bringing the context up, so a slice test that never runs the application still gets the check, and a
+     * missing template fails startup rather than the first request that happens to need it. The engine is
+     * taken as an {@link ObjectProvider} so that asking for it does not pull it into existence early, and
+     * so that a context without one — this library's own auto-configuration tests, for instance — simply
+     * has nothing to verify against.
+     */
+    @Bean
+    public SmartInitializingSingleton compositionTemplateVerifier(
+            ObjectProvider<TemplateEngine> templateEngines, ComponentRegistry componentRegistry) {
+        return () -> {
+            if (!properties.verifyTemplates()) {
+                return;
+            }
+            TemplateEngine engine = templateEngines.getIfAvailable();
+            if (engine != null) {
+                componentRegistry.requireResolvableTemplates(engine.getConfiguration());
+            }
+        };
     }
 }

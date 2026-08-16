@@ -1,0 +1,8 @@
+<!--
+  CASE      th:attr is one of the standard attributes a component tag cannot carry: its value is an
+            assignation sequence rather than a single expression, so there is no prop it could become, and
+            the tag it would have modified is replaced before it would run. Rejected rather than scraped as
+            a raw string named "attr", which is what used to reach the component.
+  EXPECT    fails, naming the attribute and where to put it instead
+-->
+<c:relay th:attr="data-a=${caption}" />

@@ -187,6 +187,40 @@ class CasesTest {
 
             assertTrue(message.contains("slot"), message);
         }
+
+        @Test
+        void contentGoesToEveryMarkerOfItsName() {
+            String out = render("slots/content-goes-to-every-marker-of-its-name");
+
+            assertEquals(2, count(out, "id=\"given\""), out);
+            assertFalse(out.contains("fallback"), out);
+        }
+
+        @Test
+        void aSlotMarkerInAConditionalBranchStillReceivesTheContent() {
+            String out = render("slots/a-slot-marker-in-a-conditional-branch-still-receives-the-content");
+
+            assertTrue(out.contains("<h2>given</h2>"), out);
+            assertFalse(out.contains("fallback two"), out);
+            assertTrue(out.contains("fallback rest"), out);
+        }
+
+        @Test
+        void contentForASlotTheComponentDoesNotDeclareFails() {
+            String message = failureOf("slots/content-for-a-slot-the-component-does-not-declare-fails");
+
+            assertTrue(message.contains("slot \"headr\""), message);
+            assertTrue(message.contains("slot \"header\""), message);
+            assertTrue(message.contains("slot \"footer\""), message);
+        }
+
+        @Test
+        void bodyContentForAComponentWithNoDefaultSlotFails() {
+            String message = failureOf("slots/body-content-for-a-component-with-no-default-slot-fails");
+
+            assertTrue(message.contains("a default slot"), message);
+            assertTrue(message.contains("slot \"tag\""), message);
+        }
     }
 
     @Nested
@@ -404,6 +438,40 @@ class CasesTest {
             assertFalse(out.contains("data-auto-hide"), out);
             assertFalse(out.contains("alert-close"), out);
             assertTrue(out.contains("Nothing to report."), out);
+        }
+
+        @Test
+        void thAttributesOnAComponentTagBecomeProps() {
+            String out = render("attributes/th-attributes-on-a-component-tag-become-props");
+
+            assertTrue(out.contains("title=\"evaluated\""), out);
+            assertTrue(out.contains("disabled=\"true\""), out);
+            assertTrue(out.contains("plain=\"kept\""), out);
+            assertFalse(out.contains("${"), out);
+        }
+
+        @Test
+        void anUnsupportedThAttributeOnAComponentTagFails() {
+            String message = failureOf("attributes/an-unsupported-th-attribute-on-a-component-tag-fails");
+
+            assertTrue(message.contains("th:attr"), message);
+            assertTrue(message.contains("<c:relay>"), message);
+        }
+
+        @Test
+        void cRestOutsideAComponentFails() {
+            String message = failureOf("attributes/c-rest-outside-a-component-fails");
+
+            assertTrue(message.contains("c:rest"), message);
+            assertTrue(message.contains("no component is rendering"), message);
+        }
+
+        @Test
+        void anUndeclaredCAttributeOnAComponentTagFails() {
+            String message = failureOf("attributes/an-undeclared-c-attribute-on-a-component-tag-fails");
+
+            assertTrue(message.contains("c:unknown-prop"), message);
+            assertTrue(message.contains("<c:relay>"), message);
         }
     }
 

@@ -125,7 +125,10 @@ class MultiPrefixTest {
      */
     @Test
     void aSlotMarkerSpelledWithTheWrongPrefixFailsWhereItIsWritten() {
-        Exception thrown = assertThrows(Exception.class, () -> render("<x:mismatched>body</x:mismatched>"));
+        // No content passed, deliberately: content would trip requireOnlyDeclaredSlots first — an
+        // unrecognized marker leaves the component declaring no slots — and the marker itself is what this
+        // is about. That error names the template too, so neither order leaves you guessing.
+        Exception thrown = assertThrows(Exception.class, () -> render("<x:mismatched />"));
 
         String message = rootMessage(thrown);
         assertTrue(message.contains("<c:slot>"), message);
