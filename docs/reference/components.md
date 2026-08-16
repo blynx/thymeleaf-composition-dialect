@@ -124,3 +124,10 @@ not combine with it. The more specific placement always wins.
 
 See [Attributes](attributes.md) for how attributes are passed, declared as props, and read.
 See [Context](context.md) for locale, messages, and variable scope.
+
+## Unresolved tags
+
+A tag under the dialect prefix that no component claims — a typo, or a component whose class isn't
+discovered by any of the dialect's `ComponentSource`s — fails when it renders, naming the tag. Resolution
+happens only for a tag that actually renders: one behind a false `th:if`, an untaken `th:each`, or any other
+branch that never runs is never checked, the same as a real component tag would be.

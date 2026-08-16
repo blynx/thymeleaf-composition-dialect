@@ -44,6 +44,7 @@ class CompositionDialectTest {
         assertEquals(1, countOf(processors, CompositionRestAttributesTagProcessor.class));
         // One per template mode, HTML and XML.
         assertEquals(2, countOf(processors, CompositionSlotPlacementProcessor.class));
+        assertEquals(2, countOf(processors, CompositionUnresolvedTagProcessor.class));
     }
 
     @Test

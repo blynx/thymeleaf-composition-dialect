@@ -1,0 +1,6 @@
+<!--
+  CASE      <c:no-such-thing> looks like a component tag but no class claims it. Used to render as literal,
+            unprocessed markup with no error at all; it now fails loudly, naming the tag.
+  EXPECT    a template-processing error naming <c:no-such-thing>
+-->
+<c:no-such-thing />

@@ -55,8 +55,11 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
      * <p>Not {@code th:replace}'s own precedence (100), which this used to copy: a processor that replaces
      * its element ends that element's processing, so at 100 a {@code th:if} on the component tag itself was
      * silently ignored — as it still is on a {@code th:replace}.
+     *
+     * <p>Package-private rather than {@code private}: {@link CompositionUnresolvedTagProcessor} runs right
+     * after it, so that a tag this processor claims and replaces is gone before the catch-all's turn.
      */
-    private static final int PRECEDENCE = StandardUnlessTagProcessor.PRECEDENCE + 50;
+    static final int PRECEDENCE = StandardUnlessTagProcessor.PRECEDENCE + 50;
 
     private final String dialectPrefix;
     private final String elementName;

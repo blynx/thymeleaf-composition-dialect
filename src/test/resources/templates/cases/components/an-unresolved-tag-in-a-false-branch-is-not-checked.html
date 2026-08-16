@@ -1,0 +1,7 @@
+<!--
+  CASE      Resolution happens only for a tag that actually renders: <c:no-such-thing> here sits behind a
+            false th:if, which removes it before this dialect ever gets a turn on it — the same as it would
+            for a real component tag. A typo in a branch that never runs stays silent.
+  EXPECT    the wrapper renders with nothing inside; no error
+-->
+<div id="wrapper"><c:no-such-thing th:if="${false}" /></div>

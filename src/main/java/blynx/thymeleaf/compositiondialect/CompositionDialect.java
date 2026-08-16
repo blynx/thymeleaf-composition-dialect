@@ -91,6 +91,8 @@ public class CompositionDialect extends AbstractProcessorDialect {
         processors.add(new CompositionCallerProcessor(dialectPrefix));
         processors.add(new CompositionSlotPlacementProcessor(TemplateMode.HTML, dialectPrefix));
         processors.add(new CompositionSlotPlacementProcessor(TemplateMode.XML, dialectPrefix));
+        processors.add(new CompositionUnresolvedTagProcessor(TemplateMode.HTML, dialectPrefix));
+        processors.add(new CompositionUnresolvedTagProcessor(TemplateMode.XML, dialectPrefix));
         return processors;
     }
 }

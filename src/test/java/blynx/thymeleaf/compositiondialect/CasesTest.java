@@ -190,6 +190,26 @@ class CasesTest {
     }
 
     @Nested
+    @DisplayName("component tag resolution")
+    class ComponentResolution {
+
+        @Test
+        void anUnresolvedComponentTagFails() {
+            String message = failureOf("components/an-unresolved-component-tag-fails");
+
+            assertTrue(message.contains("c:no-such-thing"), message);
+        }
+
+        @Test
+        void anUnresolvedTagInAFalseBranchIsNotChecked() {
+            String out = render("components/an-unresolved-tag-in-a-false-branch-is-not-checked");
+
+            assertTrue(out.contains("<div id=\"wrapper\">"), out);
+            assertFalse(out.contains("no-such-thing"), out);
+        }
+    }
+
+    @Nested
     @DisplayName("scope of ${this}")
     class ThisScope {
 
