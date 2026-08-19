@@ -1,0 +1,8 @@
+<!--
+  CASE      A c:slot marker nested inside another slot's fallback content is just another marker: nothing
+            about the outer marker's own fallback being used stops it from being split out and processed
+            too, at whatever depth it sits.
+  EXPECT    the "rows" fallback renders in full, including "empty-message"'s own fallback and, nested a
+            level deeper still, "empty-detail"'s
+-->
+<c:nested-slot-fallback />

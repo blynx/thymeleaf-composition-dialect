@@ -1,0 +1,7 @@
+<!--
+  CASE      Targeting one nested slot ("empty-icon") does not affect its sibling ("empty-message") — each
+            nested marker in a fallback is resolved independently, not as an all-or-nothing unit.
+  EXPECT    "empty-icon" shows the caller's content; "empty-message" still shows its own fallback text,
+            including its own nested "empty-detail" fallback two levels deep
+-->
+<c:nested-slot-fallback><span c:slot="empty-icon">A checkmark</span></c:nested-slot-fallback>

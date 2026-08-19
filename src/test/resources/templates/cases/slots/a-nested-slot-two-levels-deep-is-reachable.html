@@ -1,0 +1,8 @@
+<!--
+  CASE      "empty-detail" sits inside "empty-message"'s fallback, which itself sits inside "rows"'s
+            fallback — two levels of nesting. Recursion is not hardcoded to stop after one level, so a
+            caller can still reach it directly.
+  EXPECT    "rows"'s and "empty-message"'s own fallback text both still render; "empty-detail" shows the
+            caller's content instead of its own fallback text
+-->
+<c:nested-slot-fallback><span c:slot="empty-detail">Custom detail</span></c:nested-slot-fallback>

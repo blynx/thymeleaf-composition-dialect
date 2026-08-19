@@ -9,6 +9,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.RecordComponent;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -90,18 +91,27 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
 
     /**
      * Events between slot markers; {@code segments.length == slotMarkerNames.length + 1}.
-     * {@code fallbacks[i]} holds marker {@code i}'s fallback content when it was written in paired form
-     * ({@code <c:slot>...</c:slot>}), {@code null} when it was self-closing.
+     * {@code fallbacks[i]} holds marker {@code i}'s fallback content, parsed the very same way as the
+     * top-level fragment — so a {@code c:slot} marker nested inside a fallback is found too, recursively —
+     * when marker {@code i} was written in paired form ({@code <c:slot>...</c:slot>}); {@code null} when it
+     * was self-closing.
      *
-     * <p>{@code declaredSlotNames} is derived from {@code slotMarkerNames} and kept here so it costs nothing
-     * per render — the same reason the segments are pre-split at all.
+     * <p>{@code declaredSlotNames} is the union of {@code slotMarkerNames} and every nested fragment's own
+     * {@code declaredSlotNames}, collected once here so it costs nothing per render — the same reason the
+     * segments are pre-split at all. A name declared only inside a fallback is still something a caller may
+     * target directly by name; the nesting is invisible at the call site.
      */
-    private record FragmentInfo(IModel[] segments, String[] slotMarkerNames, IModel[] fallbacks,
+    private record FragmentInfo(IModel[] segments, String[] slotMarkerNames, FragmentInfo[] fallbacks,
                                 Set<String> declaredSlotNames) {
 
-        static FragmentInfo of(IModel[] segments, String[] slotMarkerNames, IModel[] fallbacks) {
-            return new FragmentInfo(segments, slotMarkerNames, fallbacks,
-                    Set.copyOf(List.of(slotMarkerNames)));
+        static FragmentInfo of(IModel[] segments, String[] slotMarkerNames, FragmentInfo[] fallbacks) {
+            Set<String> declared = new HashSet<>(List.of(slotMarkerNames));
+            for (FragmentInfo fallback : fallbacks) {
+                if (fallback != null) {
+                    declared.addAll(fallback.declaredSlotNames());
+                }
+            }
+            return new FragmentInfo(segments, slotMarkerNames, fallbacks, Set.copyOf(declared));
         }
     }
 
@@ -185,40 +195,10 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
                     + ".html\" (relative to thymeleaf templates path)");
         }
 
-        // Pre-split around the slot markers so rendering bulk-copies each segment via addModel.
         IModelFactory modelFactory = context.getModelFactory();
         ElementName slotElement = slotElementName(context.getConfiguration());
-        List<IModel> segments = new ArrayList<>();
-        List<String> names = new ArrayList<>();
-        List<IModel> fallbacks = new ArrayList<>();
+        FragmentInfo info = parseFragment(templateModel, 1, templateModel.size() - 1, modelFactory, slotElement);
 
-        IModel currentSegment = modelFactory.createModel();
-        int end = templateModel.size() - 1;
-        for (int i = 1; i < end; i++) {
-            ITemplateEvent event = templateModel.get(i);
-            if (!isSlotMarker(event, slotElement)) {
-                currentSegment.add(event);
-                continue;
-            }
-            segments.add(currentSegment);
-            names.add(markerSlotName(event));
-            if (event instanceof IStandaloneElementTag) {
-                fallbacks.add(null);
-            } else {
-                int closeAt = matchingCloseIndex(templateModel, i, end, slotElement);
-                IModel fallback = modelFactory.createModel();
-                for (int j = i + 1; j < closeAt; j++) {
-                    fallback.add(templateModel.get(j));
-                }
-                fallbacks.add(fallback);
-                i = closeAt;
-            }
-            currentSegment = modelFactory.createModel();
-        }
-        segments.add(currentSegment);
-
-        FragmentInfo info = FragmentInfo.of(segments.toArray(new IModel[0]), names.toArray(new String[0]),
-                fallbacks.toArray(new IModel[0]));
         // Cache only cacheable templates and re-check validity per hit (dev-mode edits, TTL expiry).
         // Not flushed by TemplateEngine.clearTemplateCaches().
         ICacheEntryValidity validity = templateModel.getTemplateData().getValidity();
@@ -229,23 +209,54 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
     }
 
     /**
+     * Pre-splits the events in {@code [start, end)} around the slot markers directly in them, so rendering
+     * bulk-copies each segment via addModel. Recurses into a paired marker's own fallback range, exactly the
+     * same way, so a marker nested inside another marker's fallback content is found and split out too —
+     * with no notion of "nesting depth" required, since each recursive call only ever looks at its own range.
+     */
+    private FragmentInfo parseFragment(TemplateModel templateModel, int start, int end, IModelFactory modelFactory,
+                                       ElementName slotElement) {
+        List<IModel> segments = new ArrayList<>();
+        List<String> names = new ArrayList<>();
+        List<FragmentInfo> fallbacks = new ArrayList<>();
+
+        IModel currentSegment = modelFactory.createModel();
+        for (int i = start; i < end; i++) {
+            ITemplateEvent event = templateModel.get(i);
+            if (!isSlotMarker(event, slotElement)) {
+                currentSegment.add(event);
+                continue;
+            }
+            segments.add(currentSegment);
+            names.add(markerSlotName(event));
+            if (event instanceof IStandaloneElementTag) {
+                fallbacks.add(null);
+            } else {
+                int closeAt = matchingCloseIndex(templateModel, i, end);
+                fallbacks.add(parseFragment(templateModel, i + 1, closeAt, modelFactory, slotElement));
+                i = closeAt;
+            }
+            currentSegment = modelFactory.createModel();
+        }
+        segments.add(currentSegment);
+
+        return FragmentInfo.of(segments.toArray(new IModel[0]), names.toArray(new String[0]),
+                fallbacks.toArray(new FragmentInfo[0]));
+    }
+
+    /**
      * Index of the close tag pairing with the open marker at {@code openAt}, found by tracking generic
      * open/close nesting depth from 1 — the same balanced-bracket technique as any other tag-matching,
-     * regardless of what the nested markup is. Standalone tags in between don't affect depth; another
-     * {@code c:slot} marker found while scanning is rejected outright, since native {@code <slot>} permits
-     * a fallback to contain another slot but our marker recognition has no notion of nesting depth to
-     * resolve that safely.
+     * regardless of what the nested markup is. This includes another {@code c:slot} marker: its open tag
+     * increments depth and its own close tag decrements it, exactly like any other nested element, so a
+     * marker nested inside this one is skipped over rather than treated specially here — {@link
+     * #parseFragment} is what finds it, in its own recursive call over this marker's fallback range.
+     * Standalone tags in between, including a self-closing nested marker, don't affect depth.
      */
-    private int matchingCloseIndex(TemplateModel templateModel, int openAt, int end, ElementName slotElement) {
+    private int matchingCloseIndex(TemplateModel templateModel, int openAt, int end) {
         int depth = 1;
         for (int j = openAt + 1; j < end; j++) {
             ITemplateEvent event = templateModel.get(j);
-            if (isSlotMarker(event, slotElement)) {
-                throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME
-                        + ": <" + dialectPrefix + ":slot> found inside another slot's fallback content, in "
-                        + "component \"" + elementName + "\" (" + componentPath + ".html) — a slot's fallback "
-                        + "content may not itself contain another slot marker.");
-            }
             if (event instanceof IOpenElementTag) {
                 depth++;
             } else if (event instanceof ICloseElementTag) {
@@ -275,7 +286,8 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
      * Appends the component's segments with the caller's slot content spliced in between them, each piece
      * of content wrapped in a marker that steps back out of this component — the content was written
      * outside it and must keep reading the {@code this} that was in effect there. A slot the caller left
-     * empty falls back to its own fallback content, if it has any — added unwrapped, since a fallback is
+     * empty falls back to its own fallback content, if it has any — rendered by recursing into it the same
+     * way, since a fallback may itself contain another marker; unwrapped either way, since a fallback is
      * the component's own markup and must keep reading this component's {@code this}, not step back out.
      *
      * <p>Content goes to <em>every</em> marker of its name, not only to the first as native {@code <slot>}
@@ -290,7 +302,7 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
                                     IModelFactory modelFactory) {
         IModel[] segments = fragment.segments();
         String[] slotNames = fragment.slotMarkerNames();
-        IModel[] fallbacks = fragment.fallbacks();
+        FragmentInfo[] fallbacks = fragment.fallbacks();
 
         target.addModel(segments[0]);
         for (int i = 0; i < slotNames.length; i++) {
@@ -300,7 +312,7 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
                 target.addModel(content);
                 target.add(modelFactory.createCloseElementTag(callerTagName));
             } else if (fallbacks[i] != null) {
-                target.addModel(fallbacks[i]);
+                renderFragmentInto(target, fallbacks[i], slots, modelFactory);
             }
             target.addModel(segments[i + 1]);
         }

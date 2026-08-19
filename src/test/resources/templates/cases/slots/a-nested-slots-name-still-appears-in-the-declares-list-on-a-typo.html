@@ -1,0 +1,7 @@
+<!--
+  CASE      "empty-detail" is declared only inside a fallback nested two levels deep, but declaredSlotNames
+            collects it recursively, so a misspelling still gets the same typo-checked, listed-in-the-error
+            treatment as a top-level name.
+  EXPECT    fails, naming the misspelled slot and listing "empty-detail" among what the component declares
+-->
+<c:nested-slot-fallback><span c:slot="empty-detial">x</span></c:nested-slot-fallback>

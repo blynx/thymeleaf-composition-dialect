@@ -45,13 +45,46 @@ element on purpose: there, a bare text node still counts as content, and it sile
 fallback. Only the default slot works this way. A named slot can never end up whitespace-only, since only an
 element can carry `c:slot`.
 
-A slot's fallback content must not itself contain another `c:slot` marker. The dialect rejects this as an
-error. Native `<slot>` permits it.
-
 A marker only means something inside a component's own template. Written in a page, or in content being
 passed to a component, `<c:slot />` is an error rather than markup left behind in the output — which is
 also what a misspelling gets you, since a marker is recognized while the component's template is loaded and
 nothing else answers to that tag.
+
+## A slot nested inside a fallback
+
+A slot's fallback content may itself contain another `c:slot` marker, to any depth. This is a layered
+default: a component ships a full, sensible default, and a caller can override one piece of it without
+reproducing the whole thing:
+
+```html
+<!-- data-table.html -->
+<tbody>
+    <c:slot c:name="rows">
+        <tr><td><c:slot c:name="empty-message">No data available.</c:slot></td></tr>
+    </c:slot>
+</tbody>
+```
+
+```html
+<c:data-table />
+<!-- renders the default row, with its default message -->
+
+<c:data-table><span c:slot="empty-message">Nothing matched your filters.</span></c:data-table>
+<!-- overrides just the message, keeping the default row around it -->
+
+<c:data-table><tr c:slot="rows"><td colspan="3">No results</td></tr></c:data-table>
+<!-- overrides the whole row, so "empty-message" never gets a chance to render -->
+```
+
+A caller targets a nested slot exactly like a top-level one: `c:slot="empty-message"` at the call site does
+not care where in the component's template that name's marker lives, and a typo of it gets the same
+listed-in-the-error treatment as a top-level name.
+
+Filling the outer slot (`rows` above) replaces its fallback wholesale, so a marker nested only inside that
+fallback does not render either — content assigned to it separately lands nowhere. That is not a new kind of
+drop; it is [the same tradeoff already accepted](#content-with-nowhere-to-go-is-an-error) for a slot gated
+behind a `th:if`, one level deeper: there, the gating condition is an opaque component prop the caller needs
+docs to predict, while here it is the caller's own choice of what to pass, made at the same call site.
 
 ## `th:text`/`th:utext` shorthand
 
@@ -128,6 +161,10 @@ marker that may well be removed, and the content would disappear with it.
 The cost is that two markers which really do both render both get the content, and it is rendered twice.
 That is a duplicate you can see in the output; the other way round it is a drop you cannot. A marker inside
 a `th:each` follows from the same rule: it renders once per iteration, and the content comes with it.
+
+[A marker nested inside a fallback](#a-slot-nested-inside-a-fallback) is the same idea again: a marker
+found while the fragment is parsed is "declared" regardless of whether anything at render time — a `th:if`,
+or here, whether its enclosing fallback ends up used at all — actually reaches it.
 
 ## Slot assignment scope
 

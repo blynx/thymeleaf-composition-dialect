@@ -1,0 +1,7 @@
+<!--
+  CASE      hasSlot() checks the names the caller actually gave content for — a flat set built from the
+            call site — so it works the same for a name whose only marker sits deep inside a fallback as
+            for a top-level one; the template-side nesting is invisible to it.
+  EXPECT    data-has-detail="true", since content was given for "empty-detail"
+-->
+<c:nested-slot-fallback><span c:slot="empty-detail">Custom detail</span></c:nested-slot-fallback>

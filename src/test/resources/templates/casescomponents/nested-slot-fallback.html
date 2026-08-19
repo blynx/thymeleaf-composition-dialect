@@ -1,1 +1,6 @@
-<div><c:slot c:name="a"><c:slot c:name="b">Untitled</c:slot></c:slot></div>
+<div id="table" th:attr="data-has-detail=${this.hasSlot('empty-detail')}">
+    <c:slot c:name="rows">
+        <p id="empty-message"><c:slot c:name="empty-message">No data available.<span id="empty-detail"><c:slot c:name="empty-detail">Try adjusting your filters.</c:slot></span></c:slot></p>
+        <p id="empty-icon"><c:slot c:name="empty-icon">(icon)</c:slot></p>
+    </c:slot>
+</div>

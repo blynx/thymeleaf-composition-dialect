@@ -175,10 +175,67 @@ class CasesTest {
         }
 
         @Test
-        void aNestedCSlotInsideAFallbackIsRejected() {
-            String message = failureOf("slots/a-nested-c-slot-inside-a-fallback-is-rejected");
+        void aNestedSlotRendersItsOwnFallbackWhenNeitherItNorItsParentIsGiven() {
+            String out = render("slots/a-nested-slot-renders-its-own-fallback-when-neither-it-nor-its-parent-is-given");
 
-            assertTrue(message.contains("fallback"), message);
+            assertTrue(out.contains("No data available."), out);
+            assertTrue(out.contains("Try adjusting your filters."), out);
+            assertTrue(out.contains("(icon)"), out);
+        }
+
+        @Test
+        void fillingTheParentSlotSuppressesANestedMarkerInsideItsFallback() {
+            String out = render("slots/filling-the-parent-slot-suppresses-a-nested-marker-inside-its-fallback");
+
+            assertTrue(out.contains("Custom row"), out);
+            assertFalse(out.contains("No data available."), out);
+            assertFalse(out.contains("Try adjusting your filters."), out);
+            assertFalse(out.contains("(icon)"), out);
+        }
+
+        @Test
+        void theCallerCanTargetANestedSlotByNameWithoutFillingTheParent() {
+            String out = render("slots/the-caller-can-target-a-nested-slot-by-name-without-filling-the-parent");
+
+            assertTrue(out.contains("id=\"empty-message\""), out);
+            assertTrue(out.contains("Nothing here"), out);
+            assertFalse(out.contains("No data available."), out);
+            assertFalse(out.contains("Try adjusting your filters."), out);
+            assertTrue(out.contains("(icon)"), out);
+        }
+
+        @Test
+        void contentForANestedSlotIsNotDroppedWhenItsSiblingNestedMarkersExist() {
+            String out = render("slots/content-for-a-nested-slot-is-not-dropped-when-its-sibling-nested-markers-exist");
+
+            assertTrue(out.contains("A checkmark"), out);
+            assertFalse(out.contains("(icon)"), out);
+            assertTrue(out.contains("No data available."), out);
+            assertTrue(out.contains("Try adjusting your filters."), out);
+        }
+
+        @Test
+        void aNestedSlotTwoLevelsDeepIsReachable() {
+            String out = render("slots/a-nested-slot-two-levels-deep-is-reachable");
+
+            assertTrue(out.contains("No data available."), out);
+            assertTrue(out.contains(">Custom detail<"), out);
+            assertFalse(out.contains("Try adjusting your filters."), out);
+        }
+
+        @Test
+        void aNestedSlotsNameStillAppearsInTheDeclaresListOnATypo() {
+            String message = failureOf("slots/a-nested-slots-name-still-appears-in-the-declares-list-on-a-typo");
+
+            assertTrue(message.contains("slot \"empty-detial\""), message);
+            assertTrue(message.contains("slot \"empty-detail\""), message);
+        }
+
+        @Test
+        void hasSlotWorksForANestedSlotsNameRegardlessOfTemplateNestingDepth() {
+            String out = render("slots/has-slot-works-for-a-nested-slots-name-regardless-of-template-nesting-depth");
+
+            assertTrue(out.contains("data-has-detail=\"true\""), out);
         }
 
         @Test

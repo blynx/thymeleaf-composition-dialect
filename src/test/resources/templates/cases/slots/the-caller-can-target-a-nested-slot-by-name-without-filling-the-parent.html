@@ -1,0 +1,9 @@
+<!--
+  CASE      A caller can target a nested slot by name directly, with zero new syntax, even though "rows"
+            itself is never filled — the marker/assignment split does not care where in the component's
+            template a name's marker lives.
+  EXPECT    "rows"'s own fallback structure still renders; "empty-message" shows the caller's content
+            instead of its own fallback text; its own nested "empty-detail" fallback does not render,
+            since the fallback that would have contained it was never used
+-->
+<c:nested-slot-fallback><span c:slot="empty-message">Nothing here</span></c:nested-slot-fallback>

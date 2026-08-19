@@ -1,0 +1,7 @@
+<!--
+  CASE      Filling the "rows" slot directly replaces its whole fallback, so the c:slot markers nested
+            inside that fallback — "empty-message" and "empty-icon", and "empty-detail" nested inside
+            "empty-message" in turn — never get a chance to render at all.
+  EXPECT    the caller's row content appears; none of the nested fallbacks' default text does
+-->
+<c:nested-slot-fallback><div c:slot="rows">Custom row</div></c:nested-slot-fallback>
