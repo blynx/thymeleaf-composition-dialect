@@ -1,0 +1,8 @@
+<c:component props="title"/>
+<div id="classless-rest-and-slot">
+    <span id="has-default-slot" th:text="${this.hasSlot}">?</span>
+    <span id="slot-content"><c:slot/></span>
+    <ul id="rest">
+        <li th:each="attr : ${this.restAttributes}" th:text="|${attr.key}=${attr.value}|">?</li>
+    </ul>
+</div>

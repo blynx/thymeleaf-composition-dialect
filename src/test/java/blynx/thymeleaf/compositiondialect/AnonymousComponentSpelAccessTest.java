@@ -50,6 +50,36 @@ class AnonymousComponentSpelAccessTest {
         assertFalse((Boolean) evaluate("hasSlot('y')", component));
     }
 
+    /**
+     * The gap this closes: a {@code MapAccessor}-equipped SpEL context also resolves bare property syntax
+     * ({@code hasSlot}, no parens) by calling {@code get("hasSlot")} directly, same as OGNL does — without
+     * the constructor seeding that key, this would silently evaluate to {@code null} instead of the real
+     * zero-arg method's answer.
+     */
+    @Test
+    void bareHasSlotMatchesTheParenthesisedForm() {
+        AnonymousComponent withDefaultSlot = new AnonymousComponent(Map.of(), slots(CompositionComponent.DEFAULT_SLOT));
+        AnonymousComponent withoutDefaultSlot = new AnonymousComponent(Map.of(), slots("other"));
+
+        assertTrue((Boolean) evaluate("hasSlot", withDefaultSlot));
+        assertFalse((Boolean) evaluate("hasSlot", withoutDefaultSlot));
+    }
+
+    /** Same gap, for {@code restAttributes}: bare access must resolve to the real map, not {@code null}. */
+    @Test
+    void bareRestAttributesIsIndexable() {
+        CompositionComponentContext withRest = new CompositionComponentContext(
+                new ComponentAttributes(Map.of("title", "mine", "data-kept", "a"), Set.of("title")),
+                Set.of(),
+                Locale.ROOT,
+                (code, params) -> code,
+                name -> null,
+                (name, value) -> { });
+        AnonymousComponent component = new AnonymousComponent(Map.of("title", "mine"), withRest);
+
+        assertEquals("a", evaluate("restAttributes['data-kept']", component));
+    }
+
     private Object evaluate(String expression, AnonymousComponent root) {
         StandardEvaluationContext evaluationContext = new StandardEvaluationContext(root);
         evaluationContext.addPropertyAccessor(new MapAccessor());

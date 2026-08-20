@@ -592,7 +592,7 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
      * ({@code th:field}). Note that control flow is absent deliberately: {@code th:if}, {@code th:unless},
      * {@code th:each}, {@code th:switch} and {@code th:case} all run at lower precedences than
      * {@link #PRECEDENCE} and are consumed before this processor ever sees the tag, which is what
-     * {@code CompositionElementModelProcessorTest} pins.
+     * {@code StandardDialectContractTest} pins.
      */
     static final Set<String> UNSUPPORTED_STANDARD_ATTRIBUTES = Set.of(
             "attr", "attrappend", "attrprepend",

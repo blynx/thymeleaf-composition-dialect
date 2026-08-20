@@ -1,0 +1,8 @@
+<!--
+  CASE      A classless component's `this` is Map-backed, which makes bare property syntax (no parens)
+            resolve `this.hasSlot`/`this.restAttributes` through a map lookup rather than the real
+            zero-arg method — unless the anonymous component seeds those two keys itself. This is the
+            end-to-end proof, through real component discovery, that it does.
+  EXPECT    hasSlot reports true (content was passed) and the one rest attribute shows up
+-->
+<c:classless-rest-and-slot title="mine" data-kept="a">content</c:classless-rest-and-slot>

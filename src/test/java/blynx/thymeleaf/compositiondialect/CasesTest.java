@@ -456,6 +456,15 @@ class CasesTest {
         }
 
         @Test
+        void aClasslessComponentsBareHasSlotAndRestAttributesWork() {
+            String out = render("attributes/a-classless-components-bare-hasslot-and-restattributes-work");
+
+            assertTrue(out.contains(">true<"), out);
+            assertTrue(out.contains("data-kept=a"), out);
+            assertTrue(out.contains(">content<"), out);
+        }
+
+        @Test
         void thTextIsNotSpreadByCRest() {
             String out = render("attributes/th-text-is-not-spread-by-c-rest");
 

@@ -51,6 +51,45 @@ class AnonymousComponentOgnlAccessTest {
         assertTrue(result.contains(">false<"), result);
     }
 
+    /**
+     * The gap this closes: {@code Map} property access resolves {@code this.hasSlot} (bare, no parens) by
+     * calling {@code get("hasSlot")} directly, never falling back to the real zero-arg method the way OGNL
+     * does for a normal (non-{@code Map}) object. Without the constructor seeding that key, this would
+     * silently read as {@code null} regardless of whether the default slot actually has content.
+     */
+    @Test
+    void bareHasSlotMatchesTheParenthesisedForm() {
+        Context withDefaultSlot = withThis(new AnonymousComponent(Map.of(), slots(CompositionComponent.DEFAULT_SLOT)));
+        Context withoutDefaultSlot = withThis(new AnonymousComponent(Map.of(), slots("other")));
+
+        String hasIt = engine.process("<span th:text=\"${this.hasSlot}\">?</span>", withDefaultSlot);
+        String doesNot = engine.process("<span th:text=\"${this.hasSlot}\">?</span>", withoutDefaultSlot);
+
+        assertTrue(hasIt.contains(">true<"), hasIt);
+        assertTrue(doesNot.contains(">false<"), doesNot);
+    }
+
+    /**
+     * Same gap, for {@code restAttributes}: bare {@code this.restAttributes} must resolve to the real map,
+     * not {@code null}, so indexing into it (as the documented usage does) doesn't throw.
+     */
+    @Test
+    void bareRestAttributesIsIndexable() {
+        CompositionComponentContext withRest = new CompositionComponentContext(
+                new ComponentAttributes(Map.of("title", "mine", "data-kept", "a"), Set.of("title")),
+                Set.of(),
+                Locale.ROOT,
+                (code, params) -> code,
+                name -> null,
+                (name, value) -> { });
+        Context context = withThis(new AnonymousComponent(Map.of("title", "mine"), withRest));
+
+        String result = engine.process(
+                "<span th:text=\"${this.restAttributes['data-kept']}\">?</span>", context);
+
+        assertTrue(result.contains(">a<"), result);
+    }
+
     private static Context withThis(AnonymousComponent component) {
         Context context = new Context();
         context.setVariable("this", component);
