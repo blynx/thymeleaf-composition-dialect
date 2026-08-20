@@ -3,9 +3,9 @@
 ## Passing attributes
 
 Composition dialect brings a new type of attribute with the dialect prefix `c:`.
-It is evaluated as Thymeleaf expression just like `th:`-attributes, but it names a prop
-and only a prop — it never ends up in `restAttributes`/`c:rest`, so a `c:`-prefixed attribute the component
-does not declare as a prop can only be a mistake, and fails immediately rather than silently vanishing:
+It is evaluated as a Thymeleaf expression just like `th:`-attributes, but it names a prop and only a
+prop — it never ends up in `restAttributes`/`c:rest`. A `c:`-prefixed attribute the component does not
+declare as a prop fails immediately:
 
 ```html
 <c:button c:variant="${currentVariant}" />  <!-- fine: "variant" is a declared prop -->
@@ -35,9 +35,8 @@ string.
 
 ### Standard attributes a component tag cannot carry
 
-A component tag is replaced by the component's own markup before most of the standard dialect would run, so
-the attributes whose meaning depends on modifying *that tag* have nothing left to act on and no prop they
-could sensibly become. These are rejected rather than quietly scraped as strings:
+These `th:` attributes cannot be used on a component tag and are rejected rather than silently turned into
+a prop:
 
 `th:attr`, `th:attrappend`, `th:attrprepend`, `th:with`, `th:object`, `th:classappend`, `th:styleappend`,
 `th:alt-title`, `th:lang-xmllang`, `th:fragment`, `th:remove`, `th:inline`, `th:assert`, `th:ref`,
@@ -46,9 +45,8 @@ could sensibly become. These are rejected rather than quietly scraped as strings
 Put them on an element inside the component's own template instead, or declare the value as a prop and pass
 it with `c:`, letting the template apply it.
 
-Control flow is unaffected — `th:if`, `th:unless`, `th:each`, `th:switch` and `th:case` run *before* the
-component takes over its tag, so they decide whether and how often the component renders. See
-[components](components.md).
+Control flow (`th:if`, `th:unless`, `th:each`, `th:switch`, `th:case`) is unaffected — it still decides
+whether and how often the component renders. See [Components](components.md).
 
 In a record, each component other than `context` binds automatically from the attribute of the same name,
 kebab-cased, and is coerced to its declared type — `String`, `boolean`/`Boolean`, `int`/`Integer`,
@@ -64,8 +62,7 @@ public record Button(String variant, CompositionComponentContext context) implem
 
 An attribute the caller omits binds to `null` for a reference-typed component, or to the type's zero value
 for a primitive one (`0`, `false`, and so on). Handle `null` in a compact constructor, as above. A primitive
-component defaults to zero or false on its own. A boxed or enum component needs an explicit default, since
-`null` is a real, distinct value there.
+component defaults to zero or false on its own; a boxed or enum component needs an explicit default.
 
 A value that is already the declared type passes through with no coercion at all — for example, a
 `c:`-prefixed expression that evaluates directly to an `Enum` constant, or a prop typed `Object`, which
@@ -127,12 +124,11 @@ if (rawType != null && !Set.of("button", "submit", "reset").contains(rawType.toS
 
 This read-without-declaring pattern only works for a plain or `th:`-prefixed `type` at the call site. A
 `c:`-prefixed one has no such escape: `c:` always names a prop, so `c:type` on a component that does not
-declare `type` fails before the constructor above ever runs, regardless of whether the constructor would
-have read it. Use `th:type="${...}"` for a dynamic value that is meant to be read this way.
+declare `type` always fails, regardless of whether the constructor would have read it. Use
+`th:type="${...}"` for a dynamic value that is meant to be read this way.
 
-This also means you can tell what a component accepts from its declaration alone, without rendering it —
-every `c:`-prefixed name that can legally appear on its tag is exactly its declared props. A class with no
-`@Prop` fields at all simply has no props.
+Every `c:`-prefixed name that can legally appear on a component's tag is exactly its declared props. A
+class with no `@Prop` fields has no props.
 
 ## Attribute defaults
 

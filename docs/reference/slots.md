@@ -36,25 +36,20 @@ applies to a named slot and to the default slot alike:
 <!-- renders: <div class="card"><header>Title</header><main>Nothing here yet.</main></div> -->
 ```
 
-A marker with no fallback content (`<c:slot></c:slot>`) renders nothing when the caller passes nothing. It
-does not leave leftover markup behind.
+A marker with no fallback content (`<c:slot></c:slot>`) renders nothing when the caller passes nothing.
 
 Whitespace-only default-slot content — for example, just the indentation between a component's tags — is
-treated as if the caller passed nothing. The fallback still shows. This deviates from the native `<slot>`
-element on purpose: there, a bare text node still counts as content, and it silently defeats a default-slot
-fallback. Only the default slot works this way. A named slot can never end up whitespace-only, since only an
-element can carry `c:slot`.
+treated as if the caller passed nothing, and the fallback shows. A named slot can never end up
+whitespace-only, since only an element can carry `c:slot`.
 
 A marker only means something inside a component's own template. Written in a page, or in content being
-passed to a component, `<c:slot />` is an error rather than markup left behind in the output — which is
-also what a misspelling gets you, since a marker is recognized while the component's template is loaded and
-nothing else answers to that tag.
+passed to a component, `<c:slot />` is an error, naming the template and location — this is also what a
+misspelled marker gets you.
 
 ## A slot nested inside a fallback
 
-A slot's fallback content may itself contain another `c:slot` marker, to any depth. This is a layered
-default: a component ships a full, sensible default, and a caller can override one piece of it without
-reproducing the whole thing:
+A slot's fallback content may itself contain another `c:slot` marker, to any depth. A component ships a
+full, sensible default, and a caller can override one piece of it without reproducing the whole thing:
 
 ```html
 <!-- data-table.html -->
@@ -76,15 +71,12 @@ reproducing the whole thing:
 <!-- overrides the whole row, so "empty-message" never gets a chance to render -->
 ```
 
-A caller targets a nested slot exactly like a top-level one: `c:slot="empty-message"` at the call site does
-not care where in the component's template that name's marker lives, and a typo of it gets the same
-listed-in-the-error treatment as a top-level name.
+A caller targets a nested slot exactly like a top-level one: `c:slot="empty-message"` does not care where in
+the component's template that name's marker lives, and a typo of it gets the same listed-in-the-error
+treatment as a top-level name.
 
 Filling the outer slot (`rows` above) replaces its fallback wholesale, so a marker nested only inside that
-fallback does not render either — content assigned to it separately lands nowhere. That is not a new kind of
-drop; it is [the same tradeoff already accepted](#content-with-nowhere-to-go-is-an-error) for a slot gated
-behind a `th:if`, one level deeper: there, the gating condition is an opaque component prop the caller needs
-docs to predict, while here it is the caller's own choice of what to pass, made at the same call site.
+fallback does not render either — content assigned to it separately lands nowhere.
 
 ## `th:text`/`th:utext` shorthand
 
@@ -95,7 +87,7 @@ docs to predict, while here it is the caller's own choice of what to pass, made 
 ```
 
 If both `th:text` and `th:utext` are present at once, the standard
-dialect's own precedence resolves it — this dialect adds no validation of its own.
+dialect's own precedence resolves it.
 `th:insert`/`th:replace`/`th:include` are not supported this way.
 
 ## Named slots
@@ -132,13 +124,10 @@ actually has:
      It declares a default slot, slot "footer", slot "header" -->
 ```
 
-The same applies to a body given to a component with no default slot at all. Without this the content is
-simply rendered nowhere, which looks exactly like having passed nothing — the mistake and the correct
-"pass nothing" case produce identical output.
+The same applies to a body given to a component with no default slot at all.
 
-A marker under a `th:if` still counts as declared. Markers are found when the template is parsed, before
-any conditional processing, so a component can decide per render whether to render a slot it declares —
-that is what [`hasSlot()`](#hasslot) is for.
+A marker under a `th:if` still counts as declared, so a component can decide per render whether to render a
+slot it declares — that is what [`hasSlot()`](#hasslot) is for.
 
 ## The same slot in more than one branch
 
@@ -152,19 +141,14 @@ which is what makes the usual conditional shape work — one branch per variant,
 <h3 th:if="${this.level == 3}"><c:slot /></h3>
 ```
 
-Thymeleaf has no dynamic element name, so this is how a component picks its own tag. The markers are found
-when the component's template is parsed, before any `th:if` around them has run, so at that moment all three
-exist and nothing can yet know which one will survive. Filling only the first — as the native `<slot>`
-element does, matching against a live tree where a slot either exists or does not — would mean betting on a
-marker that may well be removed, and the content would disappear with it.
+This is how a component picks its own tag dynamically, since Thymeleaf has no dynamic element name.
 
-The cost is that two markers which really do both render both get the content, and it is rendered twice.
-That is a duplicate you can see in the output; the other way round it is a drop you cannot. A marker inside
-a `th:each` follows from the same rule: it renders once per iteration, and the content comes with it.
+If more than one branch's marker actually renders, the content is duplicated — once per rendered marker.
+The same applies to a marker inside a `th:each`: it renders once per iteration, with the content alongside
+it each time.
 
-[A marker nested inside a fallback](#a-slot-nested-inside-a-fallback) is the same idea again: a marker
-found while the fragment is parsed is "declared" regardless of whether anything at render time — a `th:if`,
-or here, whether its enclosing fallback ends up used at all — actually reaches it.
+[A marker nested inside a fallback](#a-slot-nested-inside-a-fallback) works the same way: a marker still
+counts as declared regardless of whether the branch or fallback containing it ends up rendering.
 
 ## Slot assignment scope
 
@@ -195,7 +179,6 @@ decide whether to render the wrapping `<header>` and `<footer>` elements at all.
 - `hasSlot()` — checks the default slot
 - `hasSlot("name")` — checks a named slot
 
-`hasSlot()` with no argument agrees with fallback rendering about whitespace. Indentation alone between a
-component's tags does not count as content, so it returns `false` there instead of `true` for a caller who
-gave nothing meaningful. `hasSlot("name")` is not affected this way — only an element can carry `c:slot`, and
-an element can never be whitespace-only.
+`hasSlot()` with no argument agrees with fallback rendering about whitespace: indentation alone between a
+component's tags does not count as content, so it returns `false` there. `hasSlot("name")` is not affected
+this way — only an element can carry `c:slot`, and an element can never be whitespace-only.

@@ -26,8 +26,8 @@ String error = context.message("validation.min", 5);
 
 ## Template variable scope
 
-A component can read and write the surrounding template variable scope. This gives you implicit
-parent-to-descendant communication, without threading a value through every level of attributes.
+A component can read and write the surrounding template variable scope — a value set by an ancestor
+component reaches every descendant, with no need to pass it as an attribute at every level.
 
 `context.variable(name)` reads from the template scope. It is equivalent to `${name}` in the template.
 `context.setVariable(name, value)` writes a variable. Every descendant within the component's rendered
@@ -62,8 +62,8 @@ public record Heading(Integer level, CompositionComponentContext context) implem
 <c:heading>Back to default</c:heading>       <!-- level 1, no enclosing outline -->
 ```
 
-`level` is a boxed `Integer`, not a primitive `int`, on purpose. An attribute the caller omits must be
-different from one set to an explicit `0`, and only a reference type can hold `null`.
+`level` is a boxed `Integer`, not a primitive `int`: an attribute the caller omits binds to `null`, distinct
+from one explicitly set to `0`, which only a reference type can hold.
 
 Because `level` is a record component, it is a prop too, like any other. An explicit `level` attribute on
 `Outline` itself overrides the computed nesting value — the same way an explicit `level` on `Heading`

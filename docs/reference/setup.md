@@ -2,7 +2,7 @@
 
 ## Standalone
 
-Put your component templates under one path, relative to your Thymeleaf templates root. Give that path to the dialect. The dialect walks it and finds every template that declares itself a component with `<c:component>` — see [Components](components.md):
+Put your component templates under one path, relative to your Thymeleaf templates root:
 
 ```html
 <!-- templates/components/button.html -->
@@ -12,15 +12,19 @@ Put your component templates under one path, relative to your Thymeleaf template
 </button>
 ```
 
+Give that path to the dialect:
+
 ```java
 templateEngine.addDialect(new CompositionDialect("components"));
 ```
+
+See [Components](components.md) for how to write a component.
 
 ### `CompositionDialect` parameters
 
 | Parameter | Required | Description |
 |---|---|---|
-| `templatesPath` | yes | Sub-path under the Thymeleaf templates root to walk for components |
+| `templatesPath` | yes | Sub-path under the Thymeleaf templates root to scan for components |
 | `defaultPackage` | no | Package a bare or relatively-dotted `impl` resolves against |
 | `prefix` | no | Tag prefix (default: `c`) |
 
@@ -35,21 +39,21 @@ thymeleaf.composition.default-package=com.example.demo.components
 
 | Property | Required | Description |
 |---|---|---|
-| `thymeleaf.composition.templates-path` | no | Sub-path under the templates root to walk — omit it if you only import component libraries |
+| `thymeleaf.composition.templates-path` | no | Sub-path under the templates root to scan — omit it if you only import component libraries |
 | `thymeleaf.composition.default-package` | no | Package a bare or relatively-dotted `impl` resolves against |
 | `thymeleaf.composition.prefix` | no | Tag prefix (default: `c`) |
-| `thymeleaf.composition.verify-templates` | no | Check at startup that every discovered component's template is reachable through the actual resolver chain (default: `true`) |
+| `thymeleaf.composition.verify-templates` | no | Check at startup that every component's template can actually be resolved (default: `true`) |
 
-### Every component's template is checked at startup
+### Startup template check
 
-Discovery already walked the classpath directly to find your components, so `verify-templates` is not "does the file exist" — it is "does the *application's own* Thymeleaf resolver chain agree with what the classpath walk found". Those can disagree: `spring.thymeleaf.prefix` may point somewhere the classpath walk cannot see, or a resolver's resolvable-pattern restriction may leave a discovered template unreachable. With the check on, the application fails to start and lists every affected component at once:
+With `verify-templates` on, the application fails to start if a component's template cannot be resolved, listing every affected one at once:
 
 ```
 Composition Dialect: no template found for component(s):
   <c:order-summary> expects components/order-summary.html
 ```
 
-Turn the check off if you use a resolver that cannot find its templates until later than startup.
+Turn the check off if you use a resolver that only finds its templates later than startup.
 
 Outside Spring, call it yourself once the engine is built:
 
@@ -69,9 +73,9 @@ class Config {
 }
 ```
 
-## Component Libraries
+## Component libraries
 
-Components can come from several places at once — your own, plus each component library you import. Each is a `ComponentSource`: a templates path to walk, and (optionally) the package a bare `impl` resolves against and the tag namespace the source's templates are named for.
+Components can come from several places at once — your own, plus each component library you import. Each is a `ComponentSource`: a templates path to scan, plus optionally the package a bare `impl` resolves against and a tag namespace:
 
 ```java
 templateEngine.addDialect(new CompositionDialect(
@@ -79,21 +83,19 @@ templateEngine.addDialect(new CompositionDialect(
         ComponentSource.namespaced("webawesome", "wa")));
 ```
 
-The templates path belongs to the source rather than to the dialect, because an imported library's templates sit wherever that library put them in its own jar.
-
-Under Spring Boot you do not list them yourself. A library publishes its own `ComponentSource` bean, or ships a classpath descriptor with no Java code at all, and every one found is collected into the dialect alongside your own components — so importing a library is just adding the dependency.
+Under Spring Boot you do not list them yourself: a library publishes its own `ComponentSource` bean (or a classpath descriptor requiring no code at all), and every one found is added to the dialect alongside your own components.
 
 ### One prefix over all of them
 
-There is one dialect and one prefix, no matter how many sources there are. `c:slot`, `c:name`, `c:rest` — and `c:component` itself — therefore mean the same thing in every template, including the ones inside an imported library's jar. That is also why a source's templates must spell `<c:component>` under whichever prefix the dialect they end up in actually uses: it is dialect grammar, exactly as prefix-bound as `<c:slot>`.
+There is one dialect and one prefix, no matter how many sources there are — `c:slot`, `c:name`, `c:rest`, and `c:component` itself mean the same thing in every template, including a library's.
 
-What keeps two sources' components apart is the tag name, which is always the template's own file name. A library claims its own by naming its files for itself, or better, by declaring a namespace on its source (see [Component libraries](libraries.md)):
+What keeps two sources' components apart is the tag name, always the template's own file name:
 
 ```html
 <c:card>            <!-- yours -->
 <c:wa-button>        <!-- webawesome/wa-button.html, from the imported design system -->
 ```
 
-If two components end up claiming the same tag, the dialect says so at startup and names both templates and both sources. It cannot pick one for you: whichever tag is unreachable would simply never render. A namespaced source removes the risk entirely — its own templates are checked at scan time, and two sources declaring the same namespace fail at construction, before anything is even walked.
+If two components claim the same tag, the dialect reports it at startup, naming both templates. A source that declares a namespace (see [Component libraries](libraries.md)) avoids the risk: its templates are checked at scan time, and two sources declaring the same namespace fail at construction.
 
 See [Component libraries](libraries.md) for publishing one.

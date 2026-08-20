@@ -1,10 +1,68 @@
 # Components
 
-A component is a template — which can be optionally enhanced by a class.
+A component is a template. `<c:component>` marks it as one; everything else in the file is ordinary Thymeleaf markup.
 
-## The declaration
+## The simplest component
 
-`<c:component>` is what makes a template a component — without it, a file under the templates path is just a plain Thymeleaf template (a partial, a layout), not a component at all. It is a self-closing directive, placed anywhere in the template, at most once:
+```html
+<!-- templates/components/stack.html -->
+<c:component/>
+<div class="stack" c:rest><c:slot/></div>
+```
+
+```html
+<c:stack class="p-4">
+    <p>One</p>
+    <p>Two</p>
+</c:stack>
+```
+
+The tag is always the template's own file name: `stack.html` gives `<c:stack>`. `c:rest` spreads every attribute the caller passed onto wherever you put it — see [Attributes](attributes.md). `<c:slot/>` is where the caller's content goes — see [Slots](slots.md).
+
+## Props
+
+Name the attributes your component reads with `props`, a comma-separated, kebab-case list:
+
+```html
+<!-- templates/components/callout.html -->
+<c:component props="variant"/>
+<div th:classappend="${'callout--' + this.variant}" c:rest><c:slot/></div>
+```
+
+```html
+<c:callout variant="warning">Careful.</c:callout>
+```
+
+`${this.variant}` reads the prop; anything not declared in `props` still reaches `c:rest`. Reading an undeclared name, e.g. `${this.somethingElse}`, gives nothing.
+
+## Per-prop rules with `<c:prop>`
+
+For anything beyond "this attribute exists," write one `<c:prop>` per prop instead of the flat list:
+
+```html
+<!-- templates/components/price.html -->
+<c:component>
+    <c:prop name="variant" default="primary"/>
+    <c:prop name="quantity" type="int" required/>
+    <c:prop name="amount" type="java.math.BigDecimal"/>
+</c:component>
+<span th:classappend="${'price--' + this.variant}" th:text="${this.amount}">?</span>
+```
+
+| Attribute | Meaning |
+|---|---|
+| `name` | The prop's name, kebab-case |
+| `required` | Fails if the caller does not provide this attribute |
+| `default` | A literal value used when the attribute is omitted |
+| `type` | `string`, `int`, `long`, `double`, `boolean`, or a fully-qualified class name |
+
+A primitive or `string` type parses the caller's plain-text attribute. Any other type is a contract: the caller must pass an expression that already evaluates to it — `<c:price c:amount="${order.total}"/>` works; `<c:price amount="12.00"/>` does not, since there is no plain-text parse into an arbitrary class.
+
+`<c:component>`'s children must all be `<c:prop>`, each self-closing. Anything else inside it — including an unclosed `<c:prop name="…">` — is an error. Use `props="…"` or `<c:prop>`, never both on the same component.
+
+## Binding a class
+
+Add `impl` to hand the component to a class or record instead:
 
 ```html
 <!-- templates/components/button.html -->
@@ -14,38 +72,13 @@ A component is a template — which can be optionally enhanced by a class.
 </button>
 ```
 
-## Naming
+`impl` resolves two ways, tried in order: relative to the source's `defaultPackage` (a bare name like `Button`, or a relative path like `forms.Button`), then as a fully-qualified name. Use the short form for your own components; use the fully-qualified form in a published library.
 
-The tag name is always the template's own file name.
+Once a class is bound, the class's own fields declare the props — do not also write `props` or `<c:prop>` on the same `<c:component>`.
 
-| Template | Tag |
-|---|---|
-| `button.html` | `<c:button />` |
-| `nav-bar.html` | `<c:nav-bar />` |
+### Writing the class
 
-Subdirectories under the templates path are cosmetic to the file path, not to the tag: `components/forms/button.html` and `components/layout/button.html` both produce `<c:button>`, which collides — the dialect reports it at startup, naming both templates.
-
-## Binding a class with `impl`
-
-`impl` names the class to bind, resolved two ways, tried in order:
-
-1. **Relative to the source's `defaultPackage`** (see [Setup](setup.md)) — a bare simple name (`impl="Button"`) or a relative dotted path (`impl="forms.Button"`).
-2. **As a fully-qualified name** (`impl="com.example.demo.components.Button"`).
-
-Resolution happens at startup and unresolvable definitions are reported.
-
-Use the short form for your own application's components, where the package is obvious and a rename is a one-line fix. Use a fully-qualified name in a published library, so its templates describe themselves to a reader who has never seen the source's `defaultPackage`.
-
-Nothing is inferred from the class name. A template with no `impl` is definitively classless — see [below](#classless-components) — there is no convention-matching fallback, so a missing binding never silently degrades.
-
-## Component class
-
-`CompositionComponent` is an interface with one method, `context()`. It returns this component's
-`CompositionComponentContext` — its attributes, its slot names, and access to locale, messages, and the
-template variable scope.
-
-The simplest way to implement it is a record. Its components are its props, one for one, with no extra
-declaration:
+A record's components are its props, one for one:
 
 ```java
 package com.example.demo.components;
@@ -60,8 +93,7 @@ public record Button(String variant, CompositionComponentContext context) implem
 }
 ```
 
-You can also write a component as a plain class. Extend `AbstractCompositionComponent`, and declare each prop
-as a field with `@Prop`:
+Or a plain class, extending `AbstractCompositionComponent`, with each prop a field annotated `@Prop`:
 
 ```java
 package com.example.demo.components;
@@ -87,78 +119,21 @@ public class Button extends AbstractCompositionComponent {
 }
 ```
 
-`AbstractCompositionComponent` stores the context for you and implements `context()` from it. Use a plain
-class when a component must extend something else, needs custom coercion logic, or just reads better to you
-that way.
+Either way, the instance is `${this}` in the template: a record's components read as properties (`${this.variant}` → `variant()`), a class's public getters the same way (`${this.variant}` → `getVariant()`).
 
-The component instance is available in its template as `${this}`. A record's components are readable as
-properties with no `get` prefix — `${this.variant}` resolves to `variant()`. A class's public getters work
-the same way — `${this.variant}` resolves to `getVariant()`. See [Attributes](attributes.md) for how props
-are declared and coerced.
+## Naming
 
-A template's `props` and a bound class's props are the same list two ways of saying it, never two lists: declaring `props` on `<c:component>` *alongside* `impl` is rejected at startup, because the class's own shape (its record components, or its `@Prop` fields) is what declares its props — a template-side list next to `impl` could not mean anything else.
+The tag is always the template's file name, regardless of subdirectory: `components/forms/button.html` and `components/layout/button.html` both give `<c:button>` — pick a different file name if you need both.
 
-## Classless components
+## Reference
 
-Omit `impl` and the template is still a component — just one with no backing class. `${this}` still works: the dialect builds a built-in component whose property access falls through to the props you declare with `props`, a comma-separated, kebab-case attribute on `<c:component>`:
+- [Attributes](attributes.md) — passing attributes, props, defaults, `c:rest`
+- [Slots](slots.md) — default and named slots
+- [Context](context.md) — locale, messages, variable scope
+- [Component libraries](libraries.md) — publishing components as a jar, and importing one
 
-```html
-<!-- templates/components/stack.html -->
-<c:component/>
-<div class="stack" c:rest><c:slot/></div>
-```
+### Errors
 
-Zero declared props is legal — the declaration itself is what makes the file a component, not the props list. `<c:stack class="p-4">` forwarding its attributes onto its root `div` is a legitimate component and this is its whole definition.
-
-```html
-<!-- templates/components/callout.html -->
-<c:component props="variant"/>
-<div th:classappend="${'callout--' + this.variant}" c:rest><c:slot/></div>
-```
-
-`${this.variant}` reads the declared prop; anything else the caller passed reaches `c:rest`, exactly as it would with a class. Declared props are the component's whole API in both modes: an undeclared attribute is reachable through `c:rest` and nowhere else, and `${this.somethingUndeclared}` on a classless component reads nothing, the same "declare it to read it" rule the class side already has.
-
-The flat `props="…"` list says a prop exists and nothing more — no type, no default, no required flag. For that, use the paired form.
-
-## Per-prop declarations with `<c:prop>`
-
-`props="…"` and `<c:prop>` say the same thing two ways — a component's props, never both at once on the same declaration. The paired form trades the flat list for one `<c:prop>` per prop, each carrying its own shape:
-
-```html
-<!-- templates/components/price.html -->
-<c:component>
-    <c:prop name="variant" default="primary"/>
-    <c:prop name="quantity" type="int" required/>
-    <c:prop name="amount" type="java.math.BigDecimal"/>
-</c:component>
-<span th:classappend="${'price--' + this.variant}" th:text="${this.amount}">?</span>
-```
-
-`<c:component>`'s children are declarations, never markup — the component's own markup is its sibling, as in the example above. Writing anything else inside it, or leaving a `<c:prop>` open instead of self-closing it, fails at startup naming the file.
-
-| Attribute | Meaning |
-|---|---|
-| `name` | The prop's name, kebab-case, required |
-| `required` | The caller must provide this attribute — checked before any default |
-| `default` | A literal fallback used when the attribute is omitted — never an expression; the declaration describes a prop's shape, not its logic |
-| `type` | A short name (`string`, `int`, `long`, `double`, `boolean`) or a fully-qualified class name |
-
-`type` means two different things depending on which kind it names:
-
-- **A primitive or `string`** is a *conversion* instruction, parsing the caller's plain-text attribute the same way `PropCoercion` already does for a record's own fields.
-- **Anything else** is a *contract assertion*: whatever expression the caller passed must evaluate to that type. `<c:price c:amount="${order.total}"/>` passes an already-typed `BigDecimal` straight through; `<c:price amount="12.00"/>` fails loudly, since there is no plain-text conversion to an arbitrary domain type.
-
-This is exactly what a classless component otherwise cannot have — an object-valued prop with a checked contract — and it is the signal that you have probably outgrown classless if it is most of what your props are: `BigDecimal` on an otherwise markup-only `<c:price>` is fine; three domain props and a nested property chain means write the record.
-
-Resolution happens at scan time, like `impl` — a typo'd `type` fails at startup, naming the file and the prop.
-
-## Context
-
-See [Attributes](attributes.md) for how attributes are passed, declared as props, and read.
-See [Context](context.md) for locale, messages, and variable scope.
-
-## Unresolved tags
-
-A tag under the dialect prefix that no template claims — a typo, a missing `ComponentSource`, or a tag meant for a different dialect prefix entirely — fails when it renders, naming the tag and, where it can tell, the likely cause: a misspelling inside a namespace the dialect knows about (naming what that namespace actually offers), a namespace nothing here provides ("is a dependency missing?"), or a plain lookup among the application's own tags. Resolution happens only for a tag that actually renders: one behind a false `th:if`, an untaken `th:each`, or any other branch that never runs is never checked, the same as a real component tag would be.
-
-A template under the templates path that declares no `<c:component>` at all is not an error — it is just a template, and partials or layouts are free to live in the same tree. It only becomes a problem if something tries to use it as a component tag, in which case the error names the file and says to add the declaration.
+- **A misspelled or unregistered tag** fails when it renders, naming the tag.
+- **A template with no `<c:component>`** is not a component — it can be a plain partial or layout living in the same tree — until something tries to call it as one, which fails naming the file.
+- **Two templates producing the same tag** fail at startup, naming both files.
