@@ -25,7 +25,7 @@ import org.thymeleaf.TemplateEngine;
  * // in the component library's own @AutoConfiguration
  * @Bean
  * ComponentSource designSystemComponents() {
- *     return new ComponentSource("com.example.designsystem.components", "designsystem");
+ *     return new ComponentSource("designsystem", "com.example.designsystem.components");
  * }
  * }</pre>
  */
@@ -45,14 +45,14 @@ public class CompositionDialectAutoConfiguration {
         List<ComponentSource> sources = new ArrayList<>();
         // Absent when the application has no components of its own and only imports libraries, which is a
         // perfectly ordinary way to use a design system.
-        if (properties.componentPackage() != null && !properties.componentPackage().isBlank()) {
-            sources.add(new ComponentSource(properties.componentPackage(), properties.templatesPath()));
+        if (properties.templatesPath() != null && !properties.templatesPath().isBlank()) {
+            sources.add(new ComponentSource(properties.templatesPath(), properties.defaultPackage()));
         }
         librarySources.orderedStream().forEach(sources::add);
         if (sources.isEmpty()) {
             throw new IllegalStateException(CompositionDialect.DIALECT_NAME
-                    + ": no components to scan — set thymeleaf.composition.component-package to your own "
-                    + "component package, or import a component library that publishes a "
+                    + ": no components to scan — set thymeleaf.composition.templates-path to your own "
+                    + "components root, or import a component library that publishes a "
                     + ComponentSource.class.getSimpleName() + " bean.");
         }
         return new CompositionDialect(sources, CompositionDialect.DIALECT_NAME, properties.prefix());

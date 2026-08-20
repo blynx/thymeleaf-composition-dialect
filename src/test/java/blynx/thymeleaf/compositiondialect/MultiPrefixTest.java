@@ -157,18 +157,20 @@ class MultiPrefixTest {
     }
 
     /**
-     * Two prefixes are two namespaces, so the same tag name under each is not the clash
-     * {@link ComponentRegistry#requireNoCollisions()} rejects — each dialect only ever sees its own.
-     * Registry-level rather than rendered: one package's templates can only spell one prefix's markers.
+     * Two prefixes are two namespaces. {@code <c:component>} is itself dialect grammar — as prefix-bound
+     * as {@code <c:slot>} — so a source's templates only ever register under the one prefix they spell,
+     * and each dialect here only ever sees its own: registry-level isolation, not merely a rendering-time
+     * effect.
      */
     @Test
     void aTagNameClaimedUnderTwoPrefixesIsNotACollision() {
-        ComponentRegistry app = new CompositionDialect(APP_PACKAGE, APP_PATH, "App", "c").getRegistry();
-        ComponentRegistry other = new CompositionDialect(APP_PACKAGE, APP_PATH, "Other", "x").getRegistry();
+        ComponentRegistry app = new CompositionDialect(APP_PATH, APP_PACKAGE, "App", "c").getRegistry();
+        ComponentRegistry other = new CompositionDialect(OTHER_PATH, OTHER_PACKAGE, "Other", "x").getRegistry();
 
         assertTrue(app.findByTagName("c", "panel").isPresent());
-        assertTrue(other.findByTagName("x", "panel").isPresent());
+        assertTrue(other.findByTagName("x", "box").isPresent());
         assertTrue(app.findByTagName("x", "panel").isEmpty());
+        assertTrue(other.findByTagName("c", "box").isEmpty());
     }
 
     private static String render(String page) {
@@ -200,8 +202,8 @@ class MultiPrefixTest {
         TemplateEngine engine = new TemplateEngine();
         engine.addTemplateResolver(components);
         engine.addTemplateResolver(pages);
-        engine.addDialect(new CompositionDialect(APP_PACKAGE, APP_PATH, "App components", "c"));
-        engine.addDialect(new CompositionDialect(OTHER_PACKAGE, OTHER_PATH, "Other components", "x"));
+        engine.addDialect(new CompositionDialect(APP_PATH, APP_PACKAGE, "App components", "c"));
+        engine.addDialect(new CompositionDialect(OTHER_PATH, OTHER_PACKAGE, "Other components", "x"));
         return engine;
     }
 }

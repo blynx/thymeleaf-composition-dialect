@@ -173,7 +173,7 @@ class ConcurrentRenderingTest {
         TemplateEngine engine = new TemplateEngine();
         engine.addTemplateResolver(components);
         engine.addTemplateResolver(pages);
-        engine.addDialect(new CompositionDialect(COMPONENT_PACKAGE, COMPONENTS_PATH));
+        engine.addDialect(new CompositionDialect(COMPONENTS_PATH, COMPONENT_PACKAGE));
         return engine;
     }
 }

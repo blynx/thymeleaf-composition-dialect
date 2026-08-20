@@ -139,8 +139,8 @@ final class CaseRenderer {
         TemplateEngine engine = new TemplateEngine();
         engine.addTemplateResolver(templates);
         engine.addDialect(new CompositionDialect(
-                new ComponentSource(COMPONENT_PACKAGE, COMPONENTS_PATH),
-                new ComponentSource(LIBRARY_PACKAGE, LIBRARY_PATH)));
+                new ComponentSource(COMPONENTS_PATH, COMPONENT_PACKAGE),
+                new ComponentSource(LIBRARY_PATH, LIBRARY_PACKAGE)));
         return engine;
     }
 }

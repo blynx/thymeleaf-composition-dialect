@@ -1,3 +1,4 @@
+<c:component impl="NestedSlotFallback"/>
 <div id="table" th:attr="data-has-detail=${this.hasSlot('empty-detail')}">
     <c:slot c:name="rows">
         <p id="empty-message"><c:slot c:name="empty-message">No data available.<span id="empty-detail"><c:slot c:name="empty-detail">Try adjusting your filters.</c:slot></span></c:slot></p>

@@ -94,6 +94,10 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
     // data-c-name already both work on the attribute side.
     private volatile ElementName slotElementName = null;
 
+    // Interned c:component element name, resolved and cached the same way as slotElementName above —
+    // used at render time only to recognize and strip the declaration; the registry already resolved it.
+    private volatile ElementName componentElementName = null;
+
     // The standard dialect's prefix is configurable, so th:text/th:utext can only be resolved once we
     // have an IEngineConfiguration in hand; cached the same way as slotAttributeName above.
     private volatile StandardAttributes standardTextAttributes = null;
@@ -219,7 +223,7 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
             componentInstance = cached.componentFactory().apply(componentContext);
         } catch (Exception e) {
             throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME
-                    + ": Could not instantiate component \"" + tagName + "\" (" + descriptor.componentClass().getName() + ")", e);
+                    + ": Could not instantiate component \"" + tagName + "\" (" + describeImpl(descriptor) + ")", e);
         }
         structureHandler.setLocalVariable(COMPONENT_VARIABLE, componentInstance);
         // Read before the line above takes effect, so this is the frame the tag was written in.
@@ -235,6 +239,10 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
                 + ": <" + rootElement.getElementCompleteName() + "> is not a registered component tag. Check that "
                 + "it is spelled correctly and that its component class is discovered by one of this dialect's "
                 + "ComponentSources.");
+    }
+
+    private static String describeImpl(ComponentDescriptor descriptor) {
+        return descriptor.componentClass().map(Class::getName).orElse("classless — no impl bound");
     }
 
     private CachedFragment getOrLoadFragment(ITemplateContext context, ComponentDescriptor descriptor) {
@@ -256,9 +264,12 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
 
         IModelFactory modelFactory = context.getModelFactory();
         ElementName slotElement = slotElementName(context.getConfiguration());
-        FragmentInfo info = parseFragment(templateModel, 1, templateModel.size() - 1, modelFactory, slotElement, descriptor);
-        Function<CompositionComponentContext, CompositionComponent> componentFactory =
-                createComponentFactory(descriptor.componentClass(), tagName);
+        ElementName componentElement = componentElementName(context.getConfiguration());
+        int[] declarationCount = new int[1];
+        FragmentInfo info = parseFragment(templateModel, 1, templateModel.size() - 1, modelFactory, slotElement,
+                componentElement, descriptor, declarationCount);
+        requireExactlyOneDeclaration(declarationCount[0], descriptor);
+        Function<CompositionComponentContext, CompositionComponent> componentFactory = createComponentFactory(descriptor);
 
         // Cache only cacheable templates and re-check validity per hit (dev-mode edits, TTL expiry).
         // Not flushed by TemplateEngine.clearTemplateCaches().
@@ -277,9 +288,17 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
      * bulk-copies each segment via addModel. Recurses into a paired marker's own fallback range, exactly the
      * same way, so a marker nested inside another marker's fallback content is found and split out too —
      * with no notion of "nesting depth" required, since each recursive call only ever looks at its own range.
+     *
+     * <p>A self-closing {@code <c:component>} declaration is recognized the same way, anywhere in this same
+     * range, and stripped out entirely (added to no segment) rather than split around — the render path
+     * does not need what it says, since {@link ComponentRegistry} already resolved it at startup, but it
+     * must not appear literally in the rendered output either. {@code declarationCount} accumulates across
+     * every recursive call so {@link #getOrLoadFragment} can re-check "exactly one" on every load, the same
+     * dev-mode-consistency reasoning as {@link #requireOnlyDeclaredSlots}.
      */
     private FragmentInfo parseFragment(TemplateModel templateModel, int start, int end, IModelFactory modelFactory,
-                                       ElementName slotElement, ComponentDescriptor descriptor) {
+                                       ElementName slotElement, ElementName componentElement,
+                                       ComponentDescriptor descriptor, int[] declarationCount) {
         List<IModel> segments = new ArrayList<>();
         List<String> names = new ArrayList<>();
         List<FragmentInfo> fallbacks = new ArrayList<>();
@@ -287,6 +306,19 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
         IModel currentSegment = modelFactory.createModel();
         for (int i = start; i < end; i++) {
             ITemplateEvent event = templateModel.get(i);
+            if (isComponentDeclaration(event, componentElement)) {
+                declarationCount[0]++;
+                // Swallow one immediately-following whitespace-only text run too, so a declaration
+                // written on its own line — the documented, recommended style — leaves no stray leading
+                // newline in the component's own markup. Without this, that newline becomes a literal
+                // prefix of the fragment's first segment, and nesting the component inside itself (or
+                // inside anything) turns it into a visible line break exactly where the caller's content
+                // was spliced in.
+                if (i + 1 < end && templateModel.get(i + 1) instanceof IText text && text.getText().isBlank()) {
+                    i++;
+                }
+                continue;
+            }
             if (!isSlotMarker(event, slotElement)) {
                 currentSegment.add(event);
                 continue;
@@ -297,7 +329,8 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
                 fallbacks.add(null);
             } else {
                 int closeAt = matchingCloseIndex(templateModel, i, end, descriptor);
-                fallbacks.add(parseFragment(templateModel, i + 1, closeAt, modelFactory, slotElement, descriptor));
+                fallbacks.add(parseFragment(templateModel, i + 1, closeAt, modelFactory, slotElement,
+                        componentElement, descriptor, declarationCount));
                 i = closeAt;
             }
             currentSegment = modelFactory.createModel();
@@ -306,6 +339,32 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
 
         return FragmentInfo.of(segments.toArray(new IModel[0]), names.toArray(new String[0]),
                 fallbacks.toArray(new FragmentInfo[0]));
+    }
+
+    /**
+     * Whether {@code event} is a self-closing {@code <c:component>} declaration. Only the standalone form
+     * is recognized — the paired form (nested {@code <c:prop>}) ships later, and an open {@code
+     * <c:component>} tag is left unrecognized here, which means it survives into the rendered output as a
+     * literal tag and is reported by the wildcard processor as an unresolved tag on its own next pass,
+     * since {@code component} is reserved and claims no template.
+     */
+    private boolean isComponentDeclaration(ITemplateEvent event, ElementName componentElement) {
+        return event instanceof IStandaloneElementTag
+                && ((IElementTag) event).getElementDefinition().getElementName().equals(componentElement);
+    }
+
+    /**
+     * Re-checked on every fragment load — mirrors what {@link ComponentRegistry} already verified once at
+     * startup, so a dev-mode edit that removes or duplicates the declaration after the engine has already
+     * registered this tag is caught on the next render rather than silently rendering stale behaviour.
+     */
+    private void requireExactlyOneDeclaration(int declarationCount, ComponentDescriptor descriptor) {
+        if (declarationCount == 1) {
+            return;
+        }
+        String what = declarationCount == 0 ? "no longer declares" : "declares more than one";
+        throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME + ": " + descriptor.templatePath()
+                + ".html " + what + " <" + dialectPrefix + ":component> — exactly one is required.");
     }
 
     /**
@@ -564,7 +623,7 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
         String standardPrefix = textAttrs != null ? textAttrs.prefix() : "th";
         throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME + ": "
                 + dialectPrefix + ":" + plainAttributeName + " was used on <" + dialectPrefix + ":" + descriptor.tagName()
-                + ">, but \"" + descriptor.tagName() + "\" (" + descriptor.componentClass().getName() + ") declares no prop named \""
+                + ">, but \"" + descriptor.tagName() + "\" (" + describeImpl(descriptor) + ") declares no prop named \""
                 + plainAttributeName + "\". " + dialectPrefix + ": only sets declared props, so it can't be used "
                 + "to pass an attribute through to " + dialectPrefix + ":rest — write " + plainAttributeName
                 + "=\"...\" or " + standardPrefix + ":" + plainAttributeName + "=\"...\" for that instead.");
@@ -622,6 +681,17 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
         return name;
     }
 
+    private ElementName componentElementName(IEngineConfiguration configuration) {
+        ElementName name = componentElementName;
+        if (name == null) {
+            // Benign race, as with slotAttributeName above: every thread resolves the same interned instance.
+            name = configuration.getElementDefinitions()
+                    .forName(getTemplateMode(), dialectPrefix, "component").getElementName();
+            componentElementName = name;
+        }
+        return name;
+    }
+
     /**
      * Resolves {@code th:text}/{@code th:utext} under whatever prefix the standard dialect is actually
      * configured with, rather than hardcoding {@code "th"}. {@code null} when the standard dialect isn't
@@ -650,11 +720,36 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
     }
 
     /**
+     * Dispatches on whether the descriptor bound a class: a class-bound component is built by reflection,
+     * exactly as before; a classless one gets a built-in {@link AnonymousComponent} whose backing map holds
+     * only the declared props, camel-keyed (see {@link ComponentRegistry#camelCase}) since the read site for
+     * a prop is always camel regardless of which mode built {@code this}.
+     */
+    private static Function<CompositionComponentContext, CompositionComponent> createComponentFactory(
+            ComponentDescriptor descriptor) {
+        return descriptor.componentClass()
+                .<Function<CompositionComponentContext, CompositionComponent>>map(
+                        componentClass -> createClassComponentFactory(componentClass, descriptor.tagName()))
+                .orElseGet(() -> createClasslessComponentFactory(descriptor.props()));
+    }
+
+    private static Function<CompositionComponentContext, CompositionComponent> createClasslessComponentFactory(
+            Set<String> declaredProps) {
+        return componentContext -> {
+            Map<String, Object> camelKeyed = HashMap.newHashMap(declaredProps.size());
+            for (String kebabName : declaredProps) {
+                camelKeyed.put(ComponentRegistry.camelCase(kebabName), componentContext.attributes().get(kebabName));
+            }
+            return new AnonymousComponent(camelKeyed, componentContext);
+        };
+    }
+
+    /**
      * A component either declares a single-arg {@code (CompositionComponentContext)} constructor — every
      * class-based component, and a record whose only component is the context — or, for a record with
      * props of its own, is bound via its canonical constructor by {@link #createRecordPropsFactory}.
      */
-    private static Function<CompositionComponentContext, CompositionComponent> createComponentFactory(
+    private static Function<CompositionComponentContext, CompositionComponent> createClassComponentFactory(
             Class<? extends CompositionComponent> componentClass, String elementName) {
         Constructor<? extends CompositionComponent> constructor;
         try {

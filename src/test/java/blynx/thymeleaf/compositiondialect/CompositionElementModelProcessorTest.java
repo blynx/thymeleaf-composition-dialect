@@ -48,8 +48,8 @@ class CompositionElementModelProcessorTest {
         engine.addTemplateResolver(componentResolver);
         engine.addTemplateResolver(pageResolver);
         engine.addDialect(new CompositionDialect(
-                "blynx.thymeleaf.compositiondialect.testcomponents",
-                "testcomponents"));
+                "testcomponents",
+                "blynx.thymeleaf.compositiondialect.testcomponents"));
     }
 
     @Test
@@ -232,15 +232,15 @@ class CompositionElementModelProcessorTest {
         fileEngine.addTemplateResolver(componentResolver);
         fileEngine.addTemplateResolver(pageResolver);
         fileEngine.addDialect(new CompositionDialect(
-                "blynx.thymeleaf.compositiondialect.testcomponents",
-                "testcomponents"));
+                "testcomponents",
+                "blynx.thymeleaf.compositiondialect.testcomponents"));
         return fileEngine;
     }
 
     private void writeWrapperTemplate(Path templateDir, String marker) throws IOException {
         Files.createDirectories(templateDir.resolve("testcomponents"));
         Files.writeString(templateDir.resolve("testcomponents/wrapper.html"),
-                "<div id=\"" + marker + "\"><c:slot /></div>");
+                "<c:component impl=\"Wrapper\"/>\n<div id=\"" + marker + "\"><c:slot /></div>");
     }
 
     /**

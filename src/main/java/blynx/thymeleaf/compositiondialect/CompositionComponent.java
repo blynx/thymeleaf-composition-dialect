@@ -8,9 +8,10 @@ import java.util.Map;
  * usual boilerplate). Either way, the component exposes its {@link CompositionComponentContext} via
  * {@link #context()}; everything else here is a default method built on top of it.
  *
- * <p>A component's template path is declared with {@link Composition}; a class's props are declared with
- * {@link Prop} on its fields; a record's props are its record components, one for one, needing no
- * declaration at all.
+ * <p>A component's template <em>is</em> its declaration — the template's own file basename is the tag
+ * name, and its {@code <c:component impl="…"/>} line is what binds this class to it; a class's props are
+ * declared with {@link Prop} on its fields, or a record's props are its record components, one for one,
+ * needing no declaration at all.
  */
 public interface CompositionComponent {
 

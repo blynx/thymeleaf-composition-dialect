@@ -1,3 +1,4 @@
+<c:component impl="RestReader"/>
 <ul id="rest-reader">
   <li th:each="attr : ${this.restAttributes}" th:text="|${attr.key}=${attr.value}|">attr</li>
 </ul>

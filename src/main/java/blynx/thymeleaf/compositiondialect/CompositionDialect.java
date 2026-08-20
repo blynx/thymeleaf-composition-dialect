@@ -10,15 +10,17 @@ import org.thymeleaf.standard.StandardDialect;
 import org.thymeleaf.templatemode.TemplateMode;
 
 /**
- * Thymeleaf dialect that registers one element processor per {@link CompositionComponent} subclass found
- * in its {@link ComponentSource}s, plus the {@code c:rest} attribute processor.
+ * Thymeleaf dialect that registers one wildcard element-model processor claiming every tag under its
+ * prefix, resolved against every component template found under its {@link ComponentSource}s, plus the
+ * {@code c:rest} attribute processor.
  *
  * <p>One dialect covers every source — the application's own components and each imported component
  * library's — rather than one dialect per library. Sharing the single prefix is what makes the dialect's
  * own grammar ({@code c:slot}, {@code c:name}, {@code c:rest}) canonical: a library's shipped templates
  * spell their slot markers the same way every other template does, so nothing about the prefix is baked
- * into the HTML a library publishes. What keeps two modules' components apart is the tag name, which a
- * library claims by naming its classes for itself — {@code DsButton} giving {@code <c:ds-button>}.
+ * into the HTML a library publishes. What keeps two modules' components apart is the tag name, which is
+ * always the template's own file basename — a library claims its own tags by naming its files for itself,
+ * e.g. {@code ds-button.html} giving {@code <c:ds-button>}.
  *
  * <p>Component discovery lives in {@link ComponentRegistry}, built once at construction; this dialect is a
  * consumer of it. The registry is queryable via {@link #getRegistry()}.
@@ -30,25 +32,25 @@ public class CompositionDialect extends AbstractProcessorDialect {
 
     private final ComponentRegistry registry;
 
-    public CompositionDialect(String componentPackage) {
-        this(componentPackage, null);
+    public CompositionDialect(String templatesPath) {
+        this(templatesPath, null);
     }
 
-    public CompositionDialect(String componentPackage, String templatesPath) {
-        this(componentPackage, templatesPath, DIALECT_NAME);
+    public CompositionDialect(String templatesPath, String defaultPackage) {
+        this(templatesPath, defaultPackage, DIALECT_NAME);
     }
 
-    public CompositionDialect(String componentPackage, String templatesPath, String name) {
-        this(componentPackage, templatesPath, name, DIALECT_PREFIX);
+    public CompositionDialect(String templatesPath, String defaultPackage, String name) {
+        this(templatesPath, defaultPackage, name, DIALECT_PREFIX);
     }
 
-    public CompositionDialect(String componentPackage, String templatesPath, String name, String prefix) {
-        this(componentPackage, templatesPath, name, prefix, StandardDialect.PROCESSOR_PRECEDENCE);
+    public CompositionDialect(String templatesPath, String defaultPackage, String name, String prefix) {
+        this(templatesPath, defaultPackage, name, prefix, StandardDialect.PROCESSOR_PRECEDENCE);
     }
 
-    public CompositionDialect(String componentPackage, String templatesPath, String name, String prefix,
+    public CompositionDialect(String templatesPath, String defaultPackage, String name, String prefix,
                               int processorPrecedence) {
-        this(List.of(new ComponentSource(componentPackage, templatesPath)), name, prefix, processorPrecedence);
+        this(List.of(new ComponentSource(templatesPath, defaultPackage)), name, prefix, processorPrecedence);
     }
 
     /** Every given source, under the default name and prefix. */

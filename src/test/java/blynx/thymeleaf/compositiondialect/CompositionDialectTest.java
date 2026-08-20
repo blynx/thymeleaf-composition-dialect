@@ -16,11 +16,10 @@ import blynx.thymeleaf.compositiondialect.libcomponents.DsCard;
 class CompositionDialectTest {
 
     private static final ComponentSource APP =
-            new ComponentSource("blynx.thymeleaf.compositiondialect.casescomponents", "casescomponents");
+            new ComponentSource("casescomponents", "blynx.thymeleaf.compositiondialect.casescomponents");
     private static final ComponentSource LIBRARY =
-            new ComponentSource("blynx.thymeleaf.compositiondialect.libcomponents", "libcomponents");
-    private static final String COLLISION_FIXTURES =
-            "blynx.thymeleaf.compositiondialect.registryfixtures.collision";
+            new ComponentSource("libcomponents", "blynx.thymeleaf.compositiondialect.libcomponents");
+    private static final String COLLISION_ROOT = "registryfixtures/collision";
 
     @Test
     void oneDialectCoversEverySource() {
@@ -54,8 +53,8 @@ class CompositionDialectTest {
     void aTagClaimedByTwoSourcesIsRejectedAtStartup() {
         IllegalStateException thrown = assertThrows(IllegalStateException.class,
                 () -> new CompositionDialect(
-                        new ComponentSource(COLLISION_FIXTURES + ".alpha"),
-                        new ComponentSource(COLLISION_FIXTURES + ".bravo")));
+                        new ComponentSource(COLLISION_ROOT + "/alpha"),
+                        new ComponentSource(COLLISION_ROOT + "/bravo")));
 
         assertTrue(thrown.getMessage().contains("<c:twin>"), thrown.getMessage());
     }
@@ -63,14 +62,13 @@ class CompositionDialectTest {
     @Test
     void aComponentClaimingTheDialectsOwnGrammarIsRejectedAtStartup() {
         IllegalStateException thrown = assertThrows(IllegalStateException.class,
-                () -> new CompositionDialect(
-                        new ComponentSource("blynx.thymeleaf.compositiondialect.registryfixtures.reserved")));
+                () -> new CompositionDialect(new ComponentSource("registryfixtures/reserved")));
 
         assertTrue(thrown.getMessage().contains("reserved by the dialect itself"), thrown.getMessage());
     }
 
     @Test
-    void aSourceWithoutAPackageIsRejected() {
+    void aSourceWithoutATemplatesPathIsRejected() {
         assertThrows(IllegalArgumentException.class, () -> new ComponentSource("  "));
     }
 

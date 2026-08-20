@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -24,7 +25,9 @@ import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
  */
 class CompositionDialectAutoConfigurationTest {
 
+    private static final String APP_PATH = "testcomponents";
     private static final String APP_PACKAGE = "blynx.thymeleaf.compositiondialect.testcomponents";
+    private static final String LIBRARY_PATH = "libcomponents";
     private static final String LIBRARY_PACKAGE = "blynx.thymeleaf.compositiondialect.libcomponents";
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
@@ -40,50 +43,28 @@ class CompositionDialectAutoConfigurationTest {
     }
 
     @Test
-    void theComponentPackageIsBoundAndScanned() {
-        runner.withPropertyValues("thymeleaf.composition.component-package=" + APP_PACKAGE)
+    void theTemplatesPathIsBoundAndScanned() {
+        runner.withPropertyValues(
+                        "thymeleaf.composition.templates-path=" + APP_PATH,
+                        "thymeleaf.composition.default-package=" + APP_PACKAGE)
                 .run(context -> {
                     CompositionDialect dialect = context.getBean(CompositionDialect.class);
 
                     assertEquals(List.of("card", "heading", "label", "magic-headings", "plain", "wrapper"),
                             tagNames(dialect));
-                });
-    }
-
-    /**
-     * The property this pins down was renamed from {@code components-path}. Nothing else would notice:
-     * the templates path only shows up in the path a fragment is loaded from, and an unbound property
-     * leaves it null, which is a legal value meaning "templates sit at the root".
-     */
-    @Test
-    void theTemplatesPathIsBoundAndPrefixesEveryTemplatePath() {
-        runner.withPropertyValues(
-                        "thymeleaf.composition.component-package=" + APP_PACKAGE,
-                        "thymeleaf.composition.templates-path=testcomponents")
-                .run(context -> {
-                    CompositionDialect dialect = context.getBean(CompositionDialect.class);
-
-                    assertEquals("testcomponents/card", templatePathOf(dialect, "card"));
-                });
-    }
-
-    @Test
-    void anAbsentTemplatesPathLeavesTemplatesAtTheRoot() {
-        runner.withPropertyValues("thymeleaf.composition.component-package=" + APP_PACKAGE)
-                .run(context -> {
-                    CompositionDialect dialect = context.getBean(CompositionDialect.class);
-
-                    assertEquals("card", templatePathOf(dialect, "card"));
+                    assertEquals(APP_PATH + "/card", templatePathOf(dialect, "card"));
                 });
     }
 
     @Test
     void thePrefixDefaultsToCAndIsBoundWhenSet() {
-        runner.withPropertyValues("thymeleaf.composition.component-package=" + APP_PACKAGE)
+        runner.withPropertyValues("thymeleaf.composition.templates-path=" + APP_PATH,
+                        "thymeleaf.composition.default-package=" + APP_PACKAGE)
                 .run(context -> assertEquals("c", context.getBean(CompositionDialect.class).getPrefix()));
 
         runner.withPropertyValues(
-                        "thymeleaf.composition.component-package=" + APP_PACKAGE,
+                        "thymeleaf.composition.templates-path=" + APP_PATH,
+                        "thymeleaf.composition.default-package=" + APP_PACKAGE,
                         "thymeleaf.composition.prefix=ui")
                 .run(context -> assertEquals("ui", context.getBean(CompositionDialect.class).getPrefix()));
     }
@@ -91,7 +72,9 @@ class CompositionDialectAutoConfigurationTest {
     @Test
     void aLibrarysComponentSourceBeanIsScannedAlongsideTheApplicationsOwn() {
         runner.withUserConfiguration(LibraryConfiguration.class)
-                .withPropertyValues("thymeleaf.composition.component-package=" + APP_PACKAGE)
+                .withPropertyValues(
+                        "thymeleaf.composition.templates-path=" + APP_PATH,
+                        "thymeleaf.composition.default-package=" + APP_PACKAGE)
                 .run(context -> {
                     CompositionDialect dialect = context.getBean(CompositionDialect.class);
 
@@ -103,7 +86,7 @@ class CompositionDialectAutoConfigurationTest {
 
     /** Importing a design system and writing no components of your own is an ordinary way to use this. */
     @Test
-    void anApplicationWithNoComponentPackageStillGetsTheLibrarys() {
+    void anApplicationWithNoTemplatesPathStillGetsTheLibrarys() {
         runner.withUserConfiguration(LibraryConfiguration.class)
                 .run(context -> {
                     CompositionDialect dialect = context.getBean(CompositionDialect.class);
@@ -113,21 +96,21 @@ class CompositionDialectAutoConfigurationTest {
     }
 
     @Test
-    void aBlankComponentPackageCountsAsAbsentRatherThanAsAPackageToScan() {
+    void aBlankTemplatesPathCountsAsAbsentRatherThanAsAPathToScan() {
         runner.withUserConfiguration(LibraryConfiguration.class)
-                .withPropertyValues("thymeleaf.composition.component-package=")
+                .withPropertyValues("thymeleaf.composition.templates-path=")
                 .run(context -> assertEquals(List.of("ds-badge", "ds-card"),
                         tagNames(context.getBean(CompositionDialect.class))));
     }
 
     @Test
-    void noComponentPackageAndNoLibraryFailsWithAnActionableMessage() {
+    void noTemplatesPathAndNoLibraryFailsWithAnActionableMessage() {
         runner.run(context -> {
             assertNotNull(context.getStartupFailure());
 
             String message = String.valueOf(rootCauseOf(context.getStartupFailure()).getMessage());
             assertTrue(message.contains("no components to scan"), message);
-            assertTrue(message.contains("thymeleaf.composition.component-package"), message);
+            assertTrue(message.contains("thymeleaf.composition.templates-path"), message);
             assertTrue(message.contains("ComponentSource"), message);
         });
     }
@@ -135,25 +118,31 @@ class CompositionDialectAutoConfigurationTest {
     @Test
     void anApplicationsOwnDialectBeanBacksTheAutoConfigurationOff() {
         runner.withUserConfiguration(OwnDialectConfiguration.class)
-                .withPropertyValues("thymeleaf.composition.component-package=" + APP_PACKAGE)
+                .withPropertyValues(
+                        "thymeleaf.composition.templates-path=" + APP_PATH,
+                        "thymeleaf.composition.default-package=" + APP_PACKAGE)
                 .run(context -> {
                     CompositionDialect dialect = context.getBean(CompositionDialect.class);
 
-                    // The hand-built one, scanning only the library — not the property's package.
+                    // The hand-built one, scanning only the library — not the property's own path.
                     assertEquals(List.of("ds-badge", "ds-card"), tagNames(dialect));
                     assertFalse(tagNames(dialect).contains("card"), "auto-configuration did not back off");
                 });
     }
 
     /**
-     * The template check runs as part of bringing the context up, so a component whose template is missing
-     * fails startup rather than the first request that needs it. Here the templates path is left unset, so
-     * every path resolves to the templates root, where none of these components' files are.
+     * The template check runs as part of bringing the context up, so a component whose template the
+     * application's own resolver chain cannot reach fails startup rather than the first request that needs
+     * it. Here the engine's own resolver only accepts {@code libcomponents/**}, so every one of the
+     * application's own components — found by the classpath walk, but not by this resolver — is missing
+     * from its point of view.
      */
     @Test
-    void aMissingComponentTemplateFailsStartup() {
+    void aComponentTheResolverChainCannotReachFailsStartup() {
         runner.withUserConfiguration(TemplateEngineConfiguration.class)
-                .withPropertyValues("thymeleaf.composition.component-package=" + APP_PACKAGE)
+                .withPropertyValues(
+                        "thymeleaf.composition.templates-path=" + APP_PATH,
+                        "thymeleaf.composition.default-package=" + APP_PACKAGE)
                 .run(context -> {
                     assertNotNull(context.getStartupFailure());
 
@@ -165,10 +154,7 @@ class CompositionDialectAutoConfigurationTest {
 
     @Test
     void templatesThatAllResolveStartCleanly() {
-        runner.withUserConfiguration(TemplateEngineConfiguration.class)
-                .withPropertyValues(
-                        "thymeleaf.composition.component-package=" + APP_PACKAGE,
-                        "thymeleaf.composition.templates-path=testcomponents")
+        runner.withUserConfiguration(LibraryConfiguration.class, TemplateEngineConfiguration.class)
                 .run(context -> assertNull(context.getStartupFailure()));
     }
 
@@ -176,7 +162,8 @@ class CompositionDialectAutoConfigurationTest {
     void theTemplateCheckCanBeTurnedOff() {
         runner.withUserConfiguration(TemplateEngineConfiguration.class)
                 .withPropertyValues(
-                        "thymeleaf.composition.component-package=" + APP_PACKAGE,
+                        "thymeleaf.composition.templates-path=" + APP_PATH,
+                        "thymeleaf.composition.default-package=" + APP_PACKAGE,
                         "thymeleaf.composition.verify-templates=false")
                 .run(context -> assertNull(context.getStartupFailure()));
     }
@@ -184,7 +171,9 @@ class CompositionDialectAutoConfigurationTest {
     /** Every other test here runs without one, which is why the check has to tolerate its absence. */
     @Test
     void withNoTemplateEngineThereIsNothingToVerifyAgainst() {
-        runner.withPropertyValues("thymeleaf.composition.component-package=" + APP_PACKAGE)
+        runner.withPropertyValues(
+                        "thymeleaf.composition.templates-path=" + APP_PATH,
+                        "thymeleaf.composition.default-package=" + APP_PACKAGE)
                 .run(context -> assertNull(context.getStartupFailure()));
     }
 
@@ -205,6 +194,7 @@ class CompositionDialectAutoConfigurationTest {
             ClassLoaderTemplateResolver templates = new ClassLoaderTemplateResolver();
             templates.setPrefix("templates/");
             templates.setSuffix(".html");
+            templates.setResolvablePatterns(Set.of(LIBRARY_PATH + "/**"));
             templates.setCharacterEncoding("UTF-8");
 
             TemplateEngine engine = new TemplateEngine();
@@ -218,7 +208,7 @@ class CompositionDialectAutoConfigurationTest {
 
         @Bean
         ComponentSource designSystemComponents() {
-            return new ComponentSource(LIBRARY_PACKAGE, "libcomponents");
+            return new ComponentSource(LIBRARY_PATH, LIBRARY_PACKAGE);
         }
     }
 
@@ -227,7 +217,7 @@ class CompositionDialectAutoConfigurationTest {
 
         @Bean
         CompositionDialect compositionDialect() {
-            return new CompositionDialect(new ComponentSource(LIBRARY_PACKAGE, "libcomponents"));
+            return new CompositionDialect(new ComponentSource(LIBRARY_PATH, LIBRARY_PACKAGE));
         }
     }
 }
