@@ -2,36 +2,27 @@
 
 ## Passing attributes
 
-Composition dialect brings a new type of attribute with the dialect prefix `c:`.
-It is evaluated as a Thymeleaf expression just like `th:`-attributes, but it names a prop and only a
-prop — it never ends up in `restAttributes`/`c:rest`. A `c:`-prefixed attribute the component does not
-declare as a prop fails immediately:
-
-```html
-<c:button c:variant="${currentVariant}" />  <!-- fine: "variant" is a declared prop -->
-<c:button c:tabindex="${idx}" />            <!-- fails: "tabindex" is not a declared prop -->
-<c:button th:tabindex="${idx}" />           <!-- passes through to c:rest instead -->
-```
-
-Plain attributes arrive as strings. Attributes prefixed with `th:` are evaluated as Thymeleaf expressions
-before the dialect passes them on — that is already what `th:` means on any element, evaluate this
-expression and call it by that name. On a component tag the result is a prop rather than an HTML attribute,
-so `th:title`, `th:class` and `th:disabled` all arrive under their plain names and end up in
-`restAttributes`/`c:rest` unless the component declares them as props:
+Attributes on a component tag work like on any other Thymeleaf element: a plain attribute is a literal
+string, and a `th:`-prefixed one is evaluated as an expression:
 
 ```html
 <c:button variant="danger" />               <!-- variant = "danger" (string) -->
 <c:button th:variant="${currentVariant}" /> <!-- variant = value of currentVariant -->
 ```
 
-Reach for `th:` (or a plain attribute) whenever the value is meant to pass through as an HTML attribute,
-whether or not the component happens to declare a prop of that name; reach for `c:` only for a value that is
-specifically meant to reach a declared prop.
+Either way, the result becomes a prop if the component declares that name, or otherwise reaches
+`restAttributes`/`c:rest` (see [below](#rest-attributes)):
 
-Note that the prefix is *dropped*: `title`, `c:title` and `th:title` all name the same prop (assuming
-`title` is declared), and writing more than one spelling of it on a tag leaves the last one in source order
-winning. Only `c:` and `th:` are evaluated; any other prefix is passed through as its raw, unevaluated
-string.
+```html
+<c:button th:tabindex="${idx}" /> <!-- "tabindex" is not a declared prop, so it reaches c:rest -->
+```
+
+`c:` is reserved for the dialect's own grammar — `c:slot`, `c:name`, `c:rest` — and cannot be used to pass a
+prop; a `c:`-prefixed attribute on a component tag always fails. Use a plain attribute, or `th:` for an
+expression.
+
+Note that the prefix is *dropped* on a declared prop: `title` and `th:title` name the same prop (assuming
+`title` is declared), and writing both on one tag leaves the last one in source order winning.
 
 ### Standard attributes a component tag cannot carry
 
@@ -43,7 +34,7 @@ a prop:
 `th:field`, `th:errors`, `th:errorclass`
 
 Put them on an element inside the component's own template instead, or declare the value as a prop and pass
-it with `c:`, letting the template apply it.
+it with `th:`, letting the template apply it.
 
 Control flow (`th:if`, `th:unless`, `th:each`, `th:switch`, `th:case`) is unaffected — it still decides
 whether and how often the component renders. See [Components](components.md).
@@ -65,7 +56,7 @@ for a primitive one (`0`, `false`, and so on). Handle `null` in a compact constr
 component defaults to zero or false on its own; a boxed or enum component needs an explicit default.
 
 A value that is already the declared type passes through with no coercion at all — for example, a
-`c:`-prefixed expression that evaluates directly to an `Enum` constant, or a prop typed `Object`, which
+`th:`-prefixed expression that evaluates directly to an `Enum` constant, or a prop typed `Object`, which
 accepts anything.
 
 If a plain attribute cannot be read as the declared type — `auto-hide-seconds="soon"` for an `int` prop, say
@@ -122,13 +113,8 @@ if (rawType != null && !Set.of("button", "submit", "reset").contains(rawType.toS
 }
 ```
 
-This read-without-declaring pattern only works for a plain or `th:`-prefixed `type` at the call site. A
-`c:`-prefixed one has no such escape: `c:` always names a prop, so `c:type` on a component that does not
-declare `type` always fails, regardless of whether the constructor would have read it. Use
-`th:type="${...}"` for a dynamic value that is meant to be read this way.
-
-Every `c:`-prefixed name that can legally appear on a component's tag is exactly its declared props. A
-class with no `@Prop` fields has no props.
+This works the same whether `type` is written plain or with `th:` — either way, reading it in the
+constructor does not exclude it from `restAttributes`/`c:rest`.
 
 ## Attribute defaults
 

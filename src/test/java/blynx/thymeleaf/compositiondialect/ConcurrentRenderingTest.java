@@ -137,7 +137,7 @@ class ConcurrentRenderingTest {
      */
     private static String page(int index) {
         int depth = depthOf(index);
-        return "<c:panel c:title=\"${marker}\"><span id=\"echo\" th:text=\"${marker}\">?</span></c:panel>"
+        return "<c:panel th:title=\"${marker}\"><span id=\"echo\" th:text=\"${marker}\">?</span></c:panel>"
                 + "<c:outline>".repeat(depth) + "<c:heading />" + "</c:outline>".repeat(depth);
     }
 

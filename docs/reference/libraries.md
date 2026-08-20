@@ -71,7 +71,7 @@ Write them exactly as anyone else would:
 <!-- templates/webawesome/wa-card.html -->
 <c:component impl="Card"/>
 <article class="wa-card">
-  <header><c:wa-badge c:label="${this.title}" /></header>
+  <header><c:wa-badge th:label="${this.title}" /></header>
   <div class="wa-card__body"><c:slot /></div>
 </article>
 ```

@@ -109,7 +109,7 @@ class CompositionElementModelProcessorTest {
     void expressionAttributeIsEvaluatedAgainstTemplateContext() {
         Context ctx = new Context();
         ctx.setVariable("msg", "evaluated");
-        String result = engine.process("<c:label c:value=\"${msg}\" />", ctx);
+        String result = engine.process("<c:label th:value=\"${msg}\" />", ctx);
         assertTrue(result.contains("evaluated"));
     }
 
@@ -137,7 +137,7 @@ class CompositionElementModelProcessorTest {
     @Test
     void explicitLevelAttributeOverridesInheritedLevel() {
         String result = engine.process(
-                "<c:magic-headings><c:heading c:level=\"${5}\">text</c:heading></c:magic-headings>",
+                "<c:magic-headings><c:heading th:level=\"${5}\">text</c:heading></c:magic-headings>",
                 new Context());
         assertTrue(result.contains("id=\"heading-5\""));
     }

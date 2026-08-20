@@ -14,7 +14,7 @@ A UI component templating style for Thymeleaf.
 <c:card>
     <h2 c:slot="header">Thymeleaf Composition Dialect</h2>
     <p>Compose your layouts with components.</p>
-    <c:slogan th:each="slogan : ${this.moreSlogans}" c:variant="${slogan.variant}" th:text="${slogan}">
+    <c:slogan th:each="slogan : ${this.moreSlogans}" th:variant="${slogan.variant}" th:text="${slogan}">
         Another slogan
     </c:slogan>
     <c:link c:slot="footer" type="with-glitter">show me</c:link>

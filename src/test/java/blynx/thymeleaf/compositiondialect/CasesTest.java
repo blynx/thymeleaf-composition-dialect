@@ -524,11 +524,11 @@ class CasesTest {
         }
 
         @Test
-        void anUndeclaredCAttributeOnAComponentTagFails() {
-            String message = failureOf("attributes/an-undeclared-c-attribute-on-a-component-tag-fails");
+        void aCPrefixedAttributeOnAComponentTagAlwaysFails() {
+            String message = failureOf("attributes/a-c-prefixed-attribute-on-a-component-tag-always-fails");
 
-            assertTrue(message.contains("c:unknown-prop"), message);
-            assertTrue(message.contains("<c:relay>"), message);
+            assertTrue(message.contains("c:title"), message);
+            assertTrue(message.contains("<c:panel>"), message);
         }
     }
 

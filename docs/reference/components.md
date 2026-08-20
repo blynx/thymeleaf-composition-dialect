@@ -56,7 +56,7 @@ For anything beyond "this attribute exists," write one `<c:prop>` per prop inste
 | `default` | A literal value used when the attribute is omitted |
 | `type` | `string`, `int`, `long`, `double`, `boolean`, or a fully-qualified class name |
 
-A primitive or `string` type parses the caller's plain-text attribute. Any other type is a contract: the caller must pass an expression that already evaluates to it — `<c:price c:amount="${order.total}"/>` works; `<c:price amount="12.00"/>` does not, since there is no plain-text parse into an arbitrary class.
+A primitive or `string` type parses the caller's plain-text attribute. Any other type is a contract: the caller must pass an expression that already evaluates to it — `<c:price th:amount="${order.total}"/>` works; `<c:price amount="12.00"/>` does not, since there is no plain-text parse into an arbitrary class.
 
 `<c:component>`'s children must all be `<c:prop>`, each self-closing. Anything else inside it — including an unclosed `<c:prop name="…">` — is an error. Use `props="…"` or `<c:prop>`, never both on the same component.
 

@@ -135,7 +135,7 @@ class PairedPropDeclarationTest {
         Context context = new Context();
         context.setVariable("total", new java.math.BigDecimal("12.50"));
 
-        String result = engine.process("<c:price quantity=\"3\" c:amount=\"${total}\"/>", context);
+        String result = engine.process("<c:price quantity=\"3\" th:amount=\"${total}\"/>", context);
 
         assertTrue(result.contains("id=\"amount\">12.50<"), result);
     }

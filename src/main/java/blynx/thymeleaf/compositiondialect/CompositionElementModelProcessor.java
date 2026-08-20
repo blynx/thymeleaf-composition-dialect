@@ -616,22 +616,19 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
     }
 
     /**
-     * Rejects a {@code c:}-prefixed attribute that names no declared prop. {@code c:} is the prop channel
-     * and nothing else — unlike a plain or {@code th:}-prefixed attribute, its value is never meant to
-     * reach {@code c:rest}, so a name the component does not declare can only be a mistake (most often a
-     * typo of an actual prop name) rather than a deliberate pass-through attribute.
+     * Rejects any {@code c:}-prefixed attribute on a component's call-site tag. {@code c:} is reserved for
+     * the dialect's own grammar ({@code c:slot}, {@code c:name}, {@code c:rest}) — never a channel for
+     * props, declared or not. A prop is set with a plain attribute, or {@code th:} for an expression.
      */
-    private void requireDeclaredProp(String plainAttributeName, StandardAttributes textAttrs, ComponentDescriptor descriptor) {
-        if (descriptor.props().contains(plainAttributeName)) {
-            return;
-        }
+    private void rejectDialectPrefixedAttribute(String plainAttributeName, StandardAttributes textAttrs,
+                                                ComponentDescriptor descriptor) {
         String standardPrefix = textAttrs != null ? textAttrs.prefix() : "th";
         throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME + ": "
-                + dialectPrefix + ":" + plainAttributeName + " was used on <" + dialectPrefix + ":" + descriptor.tagName()
-                + ">, but \"" + descriptor.tagName() + "\" (" + describeImpl(descriptor) + ") declares no prop named \""
-                + plainAttributeName + "\". " + dialectPrefix + ": only sets declared props, so it can't be used "
-                + "to pass an attribute through to " + dialectPrefix + ":rest — write " + plainAttributeName
-                + "=\"...\" or " + standardPrefix + ":" + plainAttributeName + "=\"...\" for that instead.");
+                + dialectPrefix + ":" + plainAttributeName + " was used on <" + dialectPrefix + ":"
+                + descriptor.tagName() + ">. " + dialectPrefix + ": is reserved for the dialect's own grammar ("
+                + dialectPrefix + ":slot, " + dialectPrefix + ":name, " + dialectPrefix + ":rest) — declare props "
+                + "on the component and pass them with a plain attribute or " + standardPrefix + ":"
+                + plainAttributeName + " instead.");
     }
 
     private Map<String, Object> extractAttrs(IProcessableElementTag rootElement, ITemplateContext context,
@@ -649,9 +646,7 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
             String plainAttributeName = attributeName.getAttributeName();
             String prefix = attributeName.getPrefix();
             if (dialectPrefix.equals(prefix)) {
-                requireDeclaredProp(plainAttributeName, textAttrs, descriptor);
-                attrs.put(plainAttributeName,
-                        expressionParser.parseExpression(context, attr.getValue()).execute(context));
+                rejectDialectPrefixedAttribute(plainAttributeName, textAttrs, descriptor);
             } else if (textAttrs != null && textAttrs.prefix().equals(prefix)) {
                 requireSupportedStandardAttribute(plainAttributeName, textAttrs, descriptor);
                 attrs.put(plainAttributeName, attr.getValue() == null
