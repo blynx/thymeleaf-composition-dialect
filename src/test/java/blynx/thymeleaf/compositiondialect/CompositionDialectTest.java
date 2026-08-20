@@ -44,7 +44,10 @@ class CompositionDialectTest {
         assertEquals(1, countOf(processors, CompositionRestAttributesTagProcessor.class));
         // One per template mode, HTML and XML.
         assertEquals(2, countOf(processors, CompositionSlotPlacementProcessor.class));
-        assertEquals(2, countOf(processors, CompositionUnresolvedTagProcessor.class));
+        // One wildcard model processor claims every component tag in HTML mode; only XML mode still needs
+        // the dedicated catch-all, since components never render there.
+        assertEquals(1, countOf(processors, CompositionElementModelProcessor.class));
+        assertEquals(1, countOf(processors, CompositionUnresolvedTagProcessor.class));
     }
 
     @Test

@@ -81,9 +81,9 @@ public class CompositionDialect extends AbstractProcessorDialect {
     @Override
     public Set<IProcessor> getProcessors(String dialectPrefix) {
         Set<IProcessor> processors = new HashSet<>();
-        for (ComponentDescriptor descriptor : registry.components()) {
-            processors.add(new CompositionElementModelProcessor(dialectPrefix, descriptor));
-        }
+        // One wildcard processor claims every tag under the prefix and looks it up in the registry,
+        // replacing what used to be one registered processor per component.
+        processors.add(new CompositionElementModelProcessor(dialectPrefix, registry));
         // The grammar, registered once no matter how many sources contributed components. Two dialects
         // sharing a prefix would register these twice over, and a doubled c:_caller would unwind two
         // frames per hand-off instead of one.
@@ -91,7 +91,9 @@ public class CompositionDialect extends AbstractProcessorDialect {
         processors.add(new CompositionCallerProcessor(dialectPrefix));
         processors.add(new CompositionSlotPlacementProcessor(TemplateMode.HTML, dialectPrefix));
         processors.add(new CompositionSlotPlacementProcessor(TemplateMode.XML, dialectPrefix));
-        processors.add(new CompositionUnresolvedTagProcessor(TemplateMode.HTML, dialectPrefix));
+        // Components are HTML-only, so the wildcard processor above is HTML-only too and already reports
+        // an unresolved HTML tag itself. Kept for XML mode alone, so a <c:card> in an XML template still
+        // fails loudly instead of passing through as literal markup.
         processors.add(new CompositionUnresolvedTagProcessor(TemplateMode.XML, dialectPrefix));
         return processors;
     }

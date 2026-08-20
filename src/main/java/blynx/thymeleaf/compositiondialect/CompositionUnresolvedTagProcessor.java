@@ -10,13 +10,11 @@ import org.thymeleaf.processor.element.MatchingElementName;
 import org.thymeleaf.templatemode.TemplateMode;
 
 /**
- * Catches every tag under this dialect's prefix that no other processor claimed. {@link ComponentRegistry}
- * registers one {@link CompositionElementModelProcessor} per known component, each matching one specific
- * tag name at {@link CompositionElementModelProcessor#PRECEDENCE}; a tag it claims is fully replaced before
- * this processor's turn, and the dialect's own grammar ({@code c:slot}, {@code c:_caller}) is consumed at
- * lower precedence still. So whatever survives to reach here, at the last precedence in the dialect, names
- * no component and no marker — by definition a typo, a missing {@link ComponentSource}, or a tag meant for
- * a different dialect prefix entirely.
+ * Catches every tag under this dialect's prefix in {@link TemplateMode#XML}, where it is registered alone
+ * — components are HTML-only, so {@link CompositionElementModelProcessor} (the wildcard processor that
+ * claims and resolves every {@code c:}-prefixed tag in HTML mode, folding in the equivalent HTML check
+ * itself) never runs in XML mode. Under XML mode every tag under this prefix is, by that same reasoning,
+ * unresolved.
  *
  * <p>Without this, such a tag was not an error at all: nothing matched it, so it passed through as literal,
  * unprocessed markup in the rendered output.
@@ -25,10 +23,6 @@ import org.thymeleaf.templatemode.TemplateMode;
  * element name under my prefix" — only one exact name, or every element in the document regardless of
  * prefix. {@link MatchingElementName#forAllElementsWithPrefix} is the one that actually scopes the wildcard
  * to this dialect, so this class implements {@link IElementTagProcessor} directly to reach it.
- *
- * <p>Registered for both {@link TemplateMode#HTML} and {@link TemplateMode#XML}, like
- * {@link CompositionSlotPlacementProcessor}: components are HTML-only, so under XML mode every tag under
- * this prefix is, by the same reasoning, unresolved.
  */
 class CompositionUnresolvedTagProcessor implements IElementTagProcessor {
 

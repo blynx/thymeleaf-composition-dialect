@@ -25,12 +25,13 @@ import org.thymeleaf.templateresolver.StringTemplateResolver;
  * One engine, many threads: nothing on the render path is shared between concurrent renders.
  *
  * <p>The design says so by construction — {@link ComponentFrame} is an immutable record held in a
- * Thymeleaf local variable, component instances are per occurrence, and the only mutable fields in the
- * dialect are the {@code volatile} lazy caches on {@link CompositionElementModelProcessor}
- * ({@code cachedFragment} and the three interned-name fields), each of which resolves to the same value on
- * every thread. This is the guard on that staying true, not evidence of a doubt about it: the render path
- * having no shared mutable state is the property the whole {@code ${this}}-via-frame design rests on, and
- * a future change reintroducing some would otherwise be caught by nothing.
+ * Thymeleaf local variable, component instances are per occurrence, and the only mutable state in the
+ * dialect's one {@link CompositionElementModelProcessor} instance is the {@code fragmentCache} map (keyed
+ * by tag name, populated by benign racy {@code put}s) and the three {@code volatile} interned-name fields,
+ * each of which resolves to the same value on every thread. This is the guard on that staying true, not
+ * evidence of a doubt about it: the render path having no shared mutable state is the property the whole
+ * {@code ${this}}-via-frame design rests on, and a future change reintroducing some would otherwise be
+ * caught by nothing.
  *
  * <p>Each render carries a marker of its own <em>and</em> a nesting depth of its own, so a leak between
  * threads shows up as a wrong value rather than only as a crash: {@code data-title} and the echoed span

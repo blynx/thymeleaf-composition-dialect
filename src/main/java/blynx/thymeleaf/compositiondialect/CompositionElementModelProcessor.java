@@ -13,6 +13,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -33,18 +34,31 @@ import org.thymeleaf.model.IProcessableElementTag;
 import org.thymeleaf.model.IStandaloneElementTag;
 import org.thymeleaf.model.ITemplateEvent;
 import org.thymeleaf.model.IText;
-import org.thymeleaf.processor.element.AbstractElementModelProcessor;
+import org.thymeleaf.processor.AbstractProcessor;
+import org.thymeleaf.processor.element.IElementModelProcessor;
 import org.thymeleaf.processor.element.IElementModelStructureHandler;
+import org.thymeleaf.processor.element.MatchingAttributeName;
+import org.thymeleaf.processor.element.MatchingElementName;
 import org.thymeleaf.standard.expression.StandardExpressions;
 import org.thymeleaf.standard.processor.StandardUnlessTagProcessor;
 import org.thymeleaf.templatemode.TemplateMode;
 
 /**
- * Core rendering engine: for each occurrence of a component tag it instantiates the component,
- * exposes it as the {@code this} local variable, and renders the component's template with the
- * caller's slot content spliced in around {@code c:slot} markers.
+ * Core rendering engine: one instance per dialect, claiming every tag under the dialect's prefix. For each
+ * occurrence it looks the tag name up in the {@link ComponentRegistry}, instantiates the component, exposes
+ * it as the {@code this} local variable, and renders the component's template with the caller's slot
+ * content spliced in around {@code c:slot} markers. A tag name the registry does not know is, by
+ * definition, unresolved — a typo, a missing {@link ComponentSource}, or a tag meant for a different
+ * dialect prefix entirely.
+ *
+ * <p>Implements {@link IElementModelProcessor} directly rather than extending
+ * {@link org.thymeleaf.processor.element.AbstractElementModelProcessor}: that base class's constructor can
+ * only build a {@link MatchingElementName} for one specific element name, while this processor must match
+ * every element under the prefix ({@link MatchingElementName#forAllElementsWithPrefix}) — one wildcard
+ * processor standing in for what used to be one processor per registered component, so that adding a
+ * component template is a registry lookup, not a new processor.
  */
-public class CompositionElementModelProcessor extends AbstractElementModelProcessor {
+public class CompositionElementModelProcessor extends AbstractProcessor implements IElementModelProcessor {
 
     /** The component whose template is rendering, as templates see it. */
     static final String COMPONENT_VARIABLE = "this";
@@ -58,22 +72,17 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
      * <p>Not {@code th:replace}'s own precedence (100), which this used to copy: a processor that replaces
      * its element ends that element's processing, so at 100 a {@code th:if} on the component tag itself was
      * silently ignored — as it still is on a {@code th:replace}.
-     *
-     * <p>Package-private rather than {@code private}: {@link CompositionUnresolvedTagProcessor} runs right
-     * after it, so that a tag this processor claims and replaces is gone before the catch-all's turn.
      */
     static final int PRECEDENCE = StandardUnlessTagProcessor.PRECEDENCE + 50;
 
     private final String dialectPrefix;
-    private final String elementName;
-    private final Class<? extends CompositionComponent> componentClass;
+    private final ComponentRegistry registry;
+    private final MatchingElementName matchingElementName;
     private final String slotNameAttributeName;
     private final String callerTagName;
-    private final String componentPath;
-    private final Set<String> props;
-    private final Function<CompositionComponentContext, CompositionComponent> componentFactory;
 
-    private volatile CachedFragment cachedFragment = null;
+    /** Keyed by tag name (unprefixed): this instance only ever sees tags under its own single prefix. */
+    private final ConcurrentHashMap<String, CachedFragment> fragmentCache = new ConcurrentHashMap<>();
 
     // Interned c:slot name: the AttributeName overloads match by identity, while the String
     // overloads take a JVM-global lock for every tag that lacks the attribute.
@@ -115,7 +124,13 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         }
     }
 
-    private record CachedFragment(FragmentInfo info, ICacheEntryValidity validity) {
+    /**
+     * Everything a component tag needs that is derived once and then reused across renders: the parsed
+     * fragment and the constructor handle for its component class. Both are cheap to rebuild, so both share
+     * one cache entry and one validity, rather than each keeping a separate lazily-built field.
+     */
+    private record CachedFragment(FragmentInfo info, Function<CompositionComponentContext, CompositionComponent> componentFactory,
+                                  ICacheEntryValidity validity) {
     }
 
     /** The standard dialect's prefix and the names of its own that this processor handles specially. */
@@ -123,23 +138,59 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
                                       String textCompleteName, String utextCompleteName, String blockTagName) {
     }
 
-    public CompositionElementModelProcessor(String dialectPrefix, ComponentDescriptor descriptor) {
-        super(TemplateMode.HTML, dialectPrefix, descriptor.tagName(), true, null, false, PRECEDENCE);
+    public CompositionElementModelProcessor(String dialectPrefix, ComponentRegistry registry) {
+        super(TemplateMode.HTML, PRECEDENCE);
         this.dialectPrefix = dialectPrefix;
-        this.elementName = descriptor.tagName();
-        this.componentClass = descriptor.componentClass();
+        this.registry = registry;
+        this.matchingElementName = MatchingElementName.forAllElementsWithPrefix(TemplateMode.HTML, dialectPrefix);
         this.slotNameAttributeName = dialectPrefix + ":name";
         this.callerTagName = dialectPrefix + ":" + CompositionCallerProcessor.TAG_NAME;
-        this.componentPath = descriptor.templatePath();
-        this.props = descriptor.props();
-        this.componentFactory = createComponentFactory(componentClass, elementName);
     }
 
     @Override
-    protected void doProcess(ITemplateContext context, IModel tag, IElementModelStructureHandler structureHandler) {
-        FragmentInfo fragment = getOrLoadFragment(context);
+    public MatchingElementName getMatchingElementName() {
+        return matchingElementName;
+    }
+
+    @Override
+    public MatchingAttributeName getMatchingAttributeName() {
+        return null;
+    }
+
+    /**
+     * Mirrors {@link org.thymeleaf.processor.element.AbstractElementModelProcessor#process}, which this
+     * class cannot extend (see the class javadoc): decorates a failure with the template name/line/col of
+     * the tag being processed, when the exception does not already carry them.
+     */
+    @Override
+    public void process(ITemplateContext context, IModel tag, IElementModelStructureHandler structureHandler) {
+        ITemplateEvent firstEvent = tag.get(0);
+        try {
+            doProcess(context, tag, structureHandler);
+        } catch (TemplateProcessingException e) {
+            String templateName = firstEvent.getTemplateName();
+            if (templateName != null && !e.hasTemplateName()) {
+                e.setTemplateName(templateName);
+            }
+            if (firstEvent.getLine() != -1 && firstEvent.getCol() != -1 && !e.hasLineAndCol()) {
+                e.setLineAndCol(firstEvent.getLine(), firstEvent.getCol());
+            }
+            throw e;
+        } catch (Exception e) {
+            throw new TemplateProcessingException("Error during execution of processor '" + getClass().getName() + "'",
+                    firstEvent.getTemplateName(), firstEvent.getLine(), firstEvent.getCol(), e);
+        }
+    }
+
+    private void doProcess(ITemplateContext context, IModel tag, IElementModelStructureHandler structureHandler) {
         IModelFactory modelFactory = context.getModelFactory();
         IProcessableElementTag rootElement = (IProcessableElementTag) tag.get(0);
+        String tagName = rootElement.getElementDefinition().getElementName().getElementName();
+        ComponentDescriptor descriptor = registry.findByTagName(dialectPrefix, tagName)
+                .orElseThrow(() -> unresolvedTag(rootElement));
+
+        CachedFragment cached = getOrLoadFragment(context, descriptor);
+        FragmentInfo fragment = cached.info();
         StandardAttributes textAttrs = standardTextAttributes(context.getConfiguration());
 
         Map<String, IModel> slots = extractSlots(tag, modelFactory, slotAttributeName(context.getConfiguration()));
@@ -152,11 +203,11 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         }
         // After the blank-default removal and the th:text shorthand above, so that indentation-only bodies
         // stay exempt and th:text is checked like the slot content it becomes.
-        requireOnlyDeclaredSlots(slots.keySet(), fragment);
-        Map<String, Object> attrs = extractAttrs(rootElement, context, textAttrs);
+        requireOnlyDeclaredSlots(slots.keySet(), fragment, descriptor);
+        Map<String, Object> attrs = extractAttrs(rootElement, context, textAttrs, descriptor);
 
         CompositionComponentContext componentContext = new CompositionComponentContext(
-                new ComponentAttributes(attrs, props),
+                new ComponentAttributes(attrs, descriptor.props()),
                 slots.keySet(),
                 context.getLocale(),
                 (code, params) -> context.getMessage(CompositionElementModelProcessor.class, code, params, false),
@@ -165,10 +216,10 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
 
         CompositionComponent componentInstance;
         try {
-            componentInstance = componentFactory.apply(componentContext);
+            componentInstance = cached.componentFactory().apply(componentContext);
         } catch (Exception e) {
             throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME
-                    + ": Could not instantiate component \"" + elementName + "\" (" + componentClass.getName() + ")", e);
+                    + ": Could not instantiate component \"" + tagName + "\" (" + descriptor.componentClass().getName() + ")", e);
         }
         structureHandler.setLocalVariable(COMPONENT_VARIABLE, componentInstance);
         // Read before the line above takes effect, so this is the frame the tag was written in.
@@ -179,33 +230,46 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
         renderFragmentInto(tag, fragment, slots, modelFactory);
     }
 
-    private FragmentInfo getOrLoadFragment(ITemplateContext context) {
-        CachedFragment cached = cachedFragment;
+    private TemplateProcessingException unresolvedTag(IProcessableElementTag rootElement) {
+        return new TemplateProcessingException(CompositionDialect.DIALECT_NAME
+                + ": <" + rootElement.getElementCompleteName() + "> is not a registered component tag. Check that "
+                + "it is spelled correctly and that its component class is discovered by one of this dialect's "
+                + "ComponentSources.");
+    }
+
+    private CachedFragment getOrLoadFragment(ITemplateContext context, ComponentDescriptor descriptor) {
+        String tagName = descriptor.tagName();
+        CachedFragment cached = fragmentCache.get(tagName);
         if (cached != null && cached.validity().isCacheStillValid()) {
-            return cached.info();
+            return cached;
         }
 
         TemplateModel templateModel;
         try {
             templateModel = context.getConfiguration().getTemplateManager()
-                    .parseStandalone(context, componentPath, (Set<String>) null, (TemplateMode) null, true, true);
+                    .parseStandalone(context, descriptor.templatePath(), (Set<String>) null, (TemplateMode) null, true, true);
         } catch (Exception e) {
             throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME
-                    + ": Could not load template for component \"" + elementName + "\" from \"" + componentPath
+                    + ": Could not load template for component \"" + tagName + "\" from \"" + descriptor.templatePath()
                     + ".html\" (relative to thymeleaf templates path)");
         }
 
         IModelFactory modelFactory = context.getModelFactory();
         ElementName slotElement = slotElementName(context.getConfiguration());
-        FragmentInfo info = parseFragment(templateModel, 1, templateModel.size() - 1, modelFactory, slotElement);
+        FragmentInfo info = parseFragment(templateModel, 1, templateModel.size() - 1, modelFactory, slotElement, descriptor);
+        Function<CompositionComponentContext, CompositionComponent> componentFactory =
+                createComponentFactory(descriptor.componentClass(), tagName);
 
         // Cache only cacheable templates and re-check validity per hit (dev-mode edits, TTL expiry).
         // Not flushed by TemplateEngine.clearTemplateCaches().
         ICacheEntryValidity validity = templateModel.getTemplateData().getValidity();
+        CachedFragment fresh = new CachedFragment(info, componentFactory, validity);
         if (validity.isCacheable()) {
-            cachedFragment = new CachedFragment(info, validity);
+            // Plain put, not computeIfAbsent: the mapping function would hold a bin lock across a template
+            // parse. A race duplicates this work harmlessly; both threads put the same equivalent entry.
+            fragmentCache.put(tagName, fresh);
         }
-        return info;
+        return fresh;
     }
 
     /**
@@ -215,7 +279,7 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
      * with no notion of "nesting depth" required, since each recursive call only ever looks at its own range.
      */
     private FragmentInfo parseFragment(TemplateModel templateModel, int start, int end, IModelFactory modelFactory,
-                                       ElementName slotElement) {
+                                       ElementName slotElement, ComponentDescriptor descriptor) {
         List<IModel> segments = new ArrayList<>();
         List<String> names = new ArrayList<>();
         List<FragmentInfo> fallbacks = new ArrayList<>();
@@ -232,8 +296,8 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
             if (event instanceof IStandaloneElementTag) {
                 fallbacks.add(null);
             } else {
-                int closeAt = matchingCloseIndex(templateModel, i, end);
-                fallbacks.add(parseFragment(templateModel, i + 1, closeAt, modelFactory, slotElement));
+                int closeAt = matchingCloseIndex(templateModel, i, end, descriptor);
+                fallbacks.add(parseFragment(templateModel, i + 1, closeAt, modelFactory, slotElement, descriptor));
                 i = closeAt;
             }
             currentSegment = modelFactory.createModel();
@@ -253,7 +317,7 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
      * #parseFragment} is what finds it, in its own recursive call over this marker's fallback range.
      * Standalone tags in between, including a self-closing nested marker, don't affect depth.
      */
-    private int matchingCloseIndex(TemplateModel templateModel, int openAt, int end) {
+    private int matchingCloseIndex(TemplateModel templateModel, int openAt, int end, ComponentDescriptor descriptor) {
         int depth = 1;
         for (int j = openAt + 1; j < end; j++) {
             ITemplateEvent event = templateModel.get(j);
@@ -267,8 +331,8 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
             }
         }
         throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME
-                + ": <" + dialectPrefix + ":slot> in component \"" + elementName + "\" (" + componentPath
-                + ".html) is never closed.");
+                + ": <" + dialectPrefix + ":slot> in component \"" + descriptor.tagName() + "\" ("
+                + descriptor.templatePath() + ".html) is never closed.");
     }
 
     /** Whether {@code event} is a {@code c:slot} marker's own open or standalone tag — never its close tag. */
@@ -327,13 +391,13 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
      * is parsed, before any conditional processing, so a component may still decide per render whether to
      * render the slot it declares — which is what {@code hasSlot} is for.
      */
-    private void requireOnlyDeclaredSlots(Set<String> given, FragmentInfo fragment) {
+    private void requireOnlyDeclaredSlots(Set<String> given, FragmentInfo fragment, ComponentDescriptor descriptor) {
         Set<String> declared = fragment.declaredSlotNames();
         if (declared.containsAll(given)) {
             return;
         }
         throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME
-                + ": <" + dialectPrefix + ":" + elementName + "> was given content it declares no slot for: "
+                + ": <" + dialectPrefix + ":" + descriptor.tagName() + "> was given content it declares no slot for: "
                 + describeSlots(given.stream().filter(name -> !declared.contains(name))) + ". "
                 // No slots at all usually means the marker itself is wrong rather than the call site, and
                 // the marker never reaches the processor that would say so — it is consumed while the
@@ -341,7 +405,7 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
                 + (declared.isEmpty()
                         ? "It declares no slots at all — check that its own slot markers are spelled correctly"
                         : "It declares " + describeSlots(declared.stream()))
-                + " (" + componentPath + ".html).");
+                + " (" + descriptor.templatePath() + ".html).");
     }
 
     private static String describeSlots(Stream<String> names) {
@@ -474,15 +538,16 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
             "fragment", "remove", "inline", "assert", "ref",
             "field", "errors", "errorclass");
 
-    private void requireSupportedStandardAttribute(String plainAttributeName, StandardAttributes standard) {
+    private void requireSupportedStandardAttribute(String plainAttributeName, StandardAttributes standard,
+                                                    ComponentDescriptor descriptor) {
         if (!UNSUPPORTED_STANDARD_ATTRIBUTES.contains(plainAttributeName)) {
             return;
         }
         throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME + ": "
                 + standard.prefix() + ":" + plainAttributeName + " cannot be used on the <" + dialectPrefix
-                + ":" + elementName + "> tag. A component tag is replaced by the component's own markup "
+                + ":" + descriptor.tagName() + "> tag. A component tag is replaced by the component's own markup "
                 + "before that attribute would run, so the only thing it could be is a prop — and its value "
-                + "is not one. Put it on an element inside " + componentPath + ".html instead, or pass a "
+                + "is not one. Put it on an element inside " + descriptor.templatePath() + ".html instead, or pass a "
                 + "value with " + dialectPrefix + ": and let the component's template apply it.");
     }
 
@@ -492,21 +557,21 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
      * reach {@code c:rest}, so a name the component does not declare can only be a mistake (most often a
      * typo of an actual prop name) rather than a deliberate pass-through attribute.
      */
-    private void requireDeclaredProp(String plainAttributeName, StandardAttributes textAttrs) {
-        if (props.contains(plainAttributeName)) {
+    private void requireDeclaredProp(String plainAttributeName, StandardAttributes textAttrs, ComponentDescriptor descriptor) {
+        if (descriptor.props().contains(plainAttributeName)) {
             return;
         }
         String standardPrefix = textAttrs != null ? textAttrs.prefix() : "th";
         throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME + ": "
-                + dialectPrefix + ":" + plainAttributeName + " was used on <" + dialectPrefix + ":" + elementName
-                + ">, but \"" + elementName + "\" (" + componentClass.getName() + ") declares no prop named \""
+                + dialectPrefix + ":" + plainAttributeName + " was used on <" + dialectPrefix + ":" + descriptor.tagName()
+                + ">, but \"" + descriptor.tagName() + "\" (" + descriptor.componentClass().getName() + ") declares no prop named \""
                 + plainAttributeName + "\". " + dialectPrefix + ": only sets declared props, so it can't be used "
                 + "to pass an attribute through to " + dialectPrefix + ":rest — write " + plainAttributeName
                 + "=\"...\" or " + standardPrefix + ":" + plainAttributeName + "=\"...\" for that instead.");
     }
 
     private Map<String, Object> extractAttrs(IProcessableElementTag rootElement, ITemplateContext context,
-                                             StandardAttributes textAttrs) {
+                                             StandardAttributes textAttrs, ComponentDescriptor descriptor) {
         var allAttributes = rootElement.getAllAttributes();
         Map<String, Object> attrs = HashMap.newHashMap(allAttributes.length);
         var expressionParser = StandardExpressions.getExpressionParser(context.getConfiguration());
@@ -520,11 +585,11 @@ public class CompositionElementModelProcessor extends AbstractElementModelProces
             String plainAttributeName = attributeName.getAttributeName();
             String prefix = attributeName.getPrefix();
             if (dialectPrefix.equals(prefix)) {
-                requireDeclaredProp(plainAttributeName, textAttrs);
+                requireDeclaredProp(plainAttributeName, textAttrs, descriptor);
                 attrs.put(plainAttributeName,
                         expressionParser.parseExpression(context, attr.getValue()).execute(context));
             } else if (textAttrs != null && textAttrs.prefix().equals(prefix)) {
-                requireSupportedStandardAttribute(plainAttributeName, textAttrs);
+                requireSupportedStandardAttribute(plainAttributeName, textAttrs, descriptor);
                 attrs.put(plainAttributeName, attr.getValue() == null
                         ? null
                         : expressionParser.parseExpression(context, attr.getValue()).execute(context));
