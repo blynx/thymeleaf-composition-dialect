@@ -1,5 +1,6 @@
 package blynx.thymeleaf.compositiondialect;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -13,6 +14,13 @@ import java.util.Set;
  * resolved once here rather than per render, so a component's declared attributes are introspectable
  * without rendering it.
  *
+ * <p>{@code classlessPropSpecs} is the richer per-prop shape (required, default, type) a classless
+ * component's {@code <c:prop>} children can carry — empty for a class-bound component, whose props come
+ * from its own field or record-component types instead, and empty for a classless component declared
+ * with the flat {@code props="…"} shorthand, whose props carry no metadata beyond their names. Always
+ * consistent with {@code props}: {@code props} is exactly {@code classlessPropSpecs}' names, for the
+ * component-class case too.
+ *
  * <p>{@code source} is what tells one module's components from another's once several are aggregated:
  * every component shares the one dialect prefix, so the prefix no longer distinguishes them. Collision
  * messages name it, and it is the grouping a component playground would list by.
@@ -23,7 +31,8 @@ public record ComponentDescriptor(
         String prefix,
         String tagName,
         String templatePath,
-        Set<String> props) {
+        Set<String> props,
+        List<PropSpec> classlessPropSpecs) {
 
     /** {@code prefix:tagName} — handy for collision messages and playground display. */
     public String qualifiedName() {

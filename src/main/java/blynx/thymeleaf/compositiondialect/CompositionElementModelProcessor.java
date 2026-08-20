@@ -288,12 +288,15 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
      * same way, so a marker nested inside another marker's fallback content is found and split out too —
      * with no notion of "nesting depth" required, since each recursive call only ever looks at its own range.
      *
-     * <p>A self-closing {@code <c:component>} declaration is recognized the same way, anywhere in this same
-     * range, and stripped out entirely (added to no segment) rather than split around — the render path
-     * does not need what it says, since {@link ComponentRegistry} already resolved it at startup, but it
-     * must not appear literally in the rendered output either. {@code declarationCount} accumulates across
-     * every recursive call so {@link #getOrLoadFragment} can re-check "exactly one" on every load, the same
-     * dev-mode-consistency reasoning as {@link #requireOnlyDeclaredSlots}.
+     * <p>A {@code <c:component>} declaration — self-closing, or paired with its {@code <c:prop>} children —
+     * is recognized the same way, anywhere in this same range, and stripped out entirely (added to no
+     * segment) rather than split around — the render path does not need what it says, since {@link
+     * ComponentRegistry} already resolved it at startup, but it must not appear literally in the rendered
+     * output either. The paired form's children are never inspected here: they were already validated
+     * once, when the declaration was first read, and nothing in them is markup to preserve. {@code
+     * declarationCount} accumulates across every recursive call so {@link #getOrLoadFragment} can re-check
+     * "exactly one" on every load, the same dev-mode-consistency reasoning as {@link
+     * #requireOnlyDeclaredSlots}.
      */
     private FragmentInfo parseFragment(TemplateModel templateModel, int start, int end, IModelFactory modelFactory,
                                        ElementName slotElement, ElementName componentElement,
@@ -305,8 +308,13 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
         IModel currentSegment = modelFactory.createModel();
         for (int i = start; i < end; i++) {
             ITemplateEvent event = templateModel.get(i);
-            if (isComponentDeclaration(event, componentElement)) {
+            if (isComponentElement(event, componentElement)) {
                 declarationCount[0]++;
+                if (event instanceof IOpenElementTag) {
+                    // The paired form: skip straight past its own close tag, its <c:prop> children never
+                    // reaching the segment at all.
+                    i = matchingCloseIndex(templateModel, i, end, descriptor);
+                }
                 // Swallow one immediately-following whitespace-only text run too, so a declaration
                 // written on its own line — the documented, recommended style — leaves no stray leading
                 // newline in the component's own markup. Without this, that newline becomes a literal
@@ -341,14 +349,12 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
     }
 
     /**
-     * Whether {@code event} is a self-closing {@code <c:component>} declaration. Only the standalone form
-     * is recognized — the paired form (nested {@code <c:prop>}) ships later, and an open {@code
-     * <c:component>} tag is left unrecognized here, which means it survives into the rendered output as a
-     * literal tag and is reported by the wildcard processor as an unresolved tag on its own next pass,
-     * since {@code component} is reserved and claims no template.
+     * Whether {@code event} is a {@code <c:component>} declaration's own opening event — standalone for
+     * the self-closing form, open for the paired one. Never matches its close tag: the loop in {@link
+     * #parseFragment} jumps straight past that via {@link #matchingCloseIndex} instead of evaluating it.
      */
-    private boolean isComponentDeclaration(ITemplateEvent event, ElementName componentElement) {
-        return event instanceof IStandaloneElementTag
+    private boolean isComponentElement(ITemplateEvent event, ElementName componentElement) {
+        return (event instanceof IStandaloneElementTag || event instanceof IOpenElementTag)
                 && ((IElementTag) event).getElementDefinition().getElementName().equals(componentElement);
     }
 
@@ -389,8 +395,8 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
             }
         }
         throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME
-                + ": <" + dialectPrefix + ":slot> in component \"" + descriptor.tagName() + "\" ("
-                + descriptor.templatePath() + ".html) is never closed.");
+                + ": an opened <" + dialectPrefix + ":slot> or <" + dialectPrefix + ":component> in component \""
+                + descriptor.tagName() + "\" (" + descriptor.templatePath() + ".html) is never closed.");
     }
 
     /** Whether {@code event} is a {@code c:slot} marker's own open or standalone tag — never its close tag. */
@@ -729,18 +735,40 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
         return descriptor.componentClass()
                 .<Function<CompositionComponentContext, CompositionComponent>>map(
                         componentClass -> createClassComponentFactory(componentClass, descriptor.tagName()))
-                .orElseGet(() -> createClasslessComponentFactory(descriptor.props()));
+                .orElseGet(() -> createClasslessComponentFactory(descriptor.classlessPropSpecs(), descriptor.tagName()));
     }
 
+    /**
+     * Per prop: the caller's value if given, else the declared literal default if any, else {@code null}
+     * unless {@code required} says otherwise — checked in that order, so a default makes {@code required}
+     * unreachable rather than conflicting with it. Coerced through {@link PropCoercion} only when a
+     * {@code type} was declared; with none, the value is whatever the caller's attribute evaluated to,
+     * exactly like an attribute with no matching class field today.
+     */
     private static Function<CompositionComponentContext, CompositionComponent> createClasslessComponentFactory(
-            Set<String> declaredProps) {
+            List<PropSpec> propSpecs, String tagName) {
         return componentContext -> {
-            Map<String, Object> camelKeyed = HashMap.newHashMap(declaredProps.size());
-            for (String kebabName : declaredProps) {
-                camelKeyed.put(ComponentRegistry.camelCase(kebabName), componentContext.attributes().get(kebabName));
+            Map<String, Object> camelKeyed = HashMap.newHashMap(propSpecs.size());
+            for (PropSpec spec : propSpecs) {
+                camelKeyed.put(ComponentRegistry.camelCase(spec.kebabName()), resolveClasslessProp(spec, componentContext, tagName));
             }
             return new AnonymousComponent(camelKeyed, componentContext);
         };
+    }
+
+    private static Object resolveClasslessProp(PropSpec spec, CompositionComponentContext componentContext, String tagName) {
+        Object raw;
+        if (componentContext.attributes().containsKey(spec.kebabName())) {
+            raw = componentContext.attributes().get(spec.kebabName());
+        } else if (spec.defaultValue() != null) {
+            raw = spec.defaultValue();
+        } else if (spec.required()) {
+            throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME + ": component \"" + tagName
+                    + "\" requires \"" + spec.kebabName() + "\", which was not provided.");
+        } else {
+            raw = null;
+        }
+        return spec.type() != null ? PropCoercion.coerce(raw, spec.type(), tagName, spec.kebabName()) : raw;
     }
 
     /**

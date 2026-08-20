@@ -5,7 +5,6 @@ import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.RecordComponent;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -47,14 +46,22 @@ public final class ComponentRegistry {
 
     /**
      * Tag names this dialect's own grammar already claims, which a component may therefore not take.
-     * A template named {@code component.html} — or one named {@code slot.html} — would otherwise collide
-     * with the dialect's own directive/marker of the same name.
+     * A template named {@code component.html}, {@code prop.html} — or one named {@code slot.html} — would
+     * otherwise collide with the dialect's own directive/marker of the same name.
      *
      * <p>{@code rest} is absent deliberately: {@code c:rest} is an attribute, and attribute and element
      * names are matched separately, so a {@code <c:rest>} component collides with nothing.
      * {@link CompositionCallerProcessor#TAG_NAME} is absent because it cannot be a template basename.
      */
-    private static final Set<String> RESERVED_TAG_NAMES = Set.of("slot", "component");
+    private static final Set<String> RESERVED_TAG_NAMES = Set.of("slot", "component", "prop");
+
+    /** Short names a {@code <c:prop type="…">} may use instead of a fully-qualified class name. */
+    private static final Map<String, Class<?>> PRIMITIVE_TYPE_NAMES = Map.of(
+            "string", String.class,
+            "int", int.class,
+            "long", long.class,
+            "double", double.class,
+            "boolean", boolean.class);
 
     private static final Pattern HTML_RESOURCE = Pattern.compile(".*\\.html$");
 
@@ -182,7 +189,7 @@ public final class ComponentRegistry {
                                                      ComponentSource source, String prefix, String tagName,
                                                      String templatePath, String describeForErrors) {
         boolean hasImpl = declaration.impl() != null && !declaration.impl().isBlank();
-        boolean hasProps = declaration.props() != null;
+        boolean hasProps = !declaration.props().isEmpty();
         if (hasImpl && hasProps) {
             throw new IllegalStateException(CompositionDialect.DIALECT_NAME + ": " + describeForErrors
                     + " declares both impl and props — a class's own shape is what declares its props, so "
@@ -193,21 +200,44 @@ public final class ComponentRegistry {
         Optional<Class<? extends CompositionComponent>> componentClass = hasImpl
                 ? Optional.of(resolveImpl(declaration.impl(), source.defaultPackage(), describeForErrors))
                 : Optional.empty();
+        List<PropSpec> classlessPropSpecs = componentClass.isPresent()
+                ? List.of()
+                : declaration.props().stream()
+                        .map(prop -> toPropSpec(prop, describeForErrors))
+                        .toList();
         Set<String> props = componentClass.map(ComponentRegistry::readDeclaredProps)
-                .orElseGet(() -> parseClasslessProps(declaration.props()));
+                .orElseGet(() -> classlessPropSpecs.stream().map(PropSpec::kebabName)
+                        .collect(Collectors.toCollection(LinkedHashSet::new)));
 
-        return new ComponentDescriptor(componentClass, source, prefix, tagName, templatePath, props);
+        return new ComponentDescriptor(componentClass, source, prefix, tagName, templatePath, props, classlessPropSpecs);
     }
 
-    /** Comma-separated kebab-case prop names, or none at all when the attribute is absent. */
-    private static Set<String> parseClasslessProps(String props) {
-        if (props == null || props.isBlank()) {
-            return Set.of();
+    private static PropSpec toPropSpec(ComponentDeclarationReader.PropDeclaration prop, String describeForErrors) {
+        return new PropSpec(prop.name(), prop.required(), prop.defaultValue(),
+                resolvePropType(prop.type(), prop.name(), describeForErrors));
+    }
+
+    /**
+     * Resolves a {@code <c:prop type="…">}: one of the short names for a primitive/{@code String}, or a
+     * fully-qualified class name otherwise. Resolved here, at scan time, for the same reason {@code impl}
+     * is — a typo'd type fails loudly at startup rather than at first render.
+     */
+    private static Class<?> resolvePropType(String typeName, String propName, String describeForErrors) {
+        if (typeName == null) {
+            return null;
         }
-        return Arrays.stream(props.split(","))
-                .map(String::strip)
-                .filter(name -> !name.isEmpty())
-                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Class<?> primitive = PRIMITIVE_TYPE_NAMES.get(typeName);
+        if (primitive != null) {
+            return primitive;
+        }
+        Class<?> resolved = tryLoad(typeName);
+        if (resolved == null) {
+            throw new IllegalStateException(CompositionDialect.DIALECT_NAME + ": " + describeForErrors
+                    + " declares prop \"" + propName + "\" with type=\"" + typeName + "\", which could not be "
+                    + "resolved as a fully-qualified class name (and is not one of the short names: "
+                    + String.join(", ", PRIMITIVE_TYPE_NAMES.keySet()) + ").");
+        }
+        return resolved;
     }
 
     /**

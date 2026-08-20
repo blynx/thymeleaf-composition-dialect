@@ -1,0 +1,10 @@
+<c:component>
+    <c:prop name="variant" default="primary"/>
+    <c:prop name="quantity" type="int" required/>
+    <c:prop name="amount" type="java.math.BigDecimal"/>
+</c:component>
+<div>
+    <span id="variant" th:text="${this.variant}">?</span>
+    <span id="quantity" th:text="${this.quantity}">?</span>
+    <span id="amount" th:text="${this.amount}">?</span>
+</div>

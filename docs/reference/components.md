@@ -1,6 +1,6 @@
 # Components
 
-A component is a template. A class is an optional enhancement, bound to it explicitly.
+A component is a template — which can be optionally enhanced by a class.
 
 ## The declaration
 
@@ -16,7 +16,7 @@ A component is a template. A class is an optional enhancement, bound to it expli
 
 ## Naming
 
-The tag name is always the template's own file name — never derived from a class:
+The tag name is always the template's own file name.
 
 | Template | Tag |
 |---|---|
@@ -32,13 +32,7 @@ Subdirectories under the templates path are cosmetic to the file path, not to th
 1. **Relative to the source's `defaultPackage`** (see [Setup](setup.md)) — a bare simple name (`impl="Button"`) or a relative dotted path (`impl="forms.Button"`).
 2. **As a fully-qualified name** (`impl="com.example.demo.components.Button"`).
 
-Resolution happens at startup, not at first render, so a typo'd or moved class fails loudly with both attempts named:
-
-```
-Composition Dialect: components/button.html declares impl="Buton", which could not be resolved — tried
-"com.example.demo.components.Buton" (relative to this source's default package) and "Buton" (as a
-fully-qualified name).
-```
+Resolution happens at startup and unresolvable definitions are reported.
 
 Use the short form for your own application's components, where the package is obvious and a rename is a one-line fix. Use a fully-qualified name in a published library, so its templates describe themselves to a reader who has never seen the source's `defaultPackage`.
 
@@ -124,7 +118,39 @@ Zero declared props is legal — the declaration itself is what makes the file a
 
 `${this.variant}` reads the declared prop; anything else the caller passed reaches `c:rest`, exactly as it would with a class. Declared props are the component's whole API in both modes: an undeclared attribute is reachable through `c:rest` and nowhere else, and `${this.somethingUndeclared}` on a classless component reads nothing, the same "declare it to read it" rule the class side already has.
 
-There is no type declaration for a classless prop — it is whatever the caller's attribute evaluated to, exactly like an attribute with no matching class field today. If your props are domain types with a checked contract, or need coercion, you have outgrown classless: write the record.
+The flat `props="…"` list says a prop exists and nothing more — no type, no default, no required flag. For that, use the paired form.
+
+## Per-prop declarations with `<c:prop>`
+
+`props="…"` and `<c:prop>` say the same thing two ways — a component's props, never both at once on the same declaration. The paired form trades the flat list for one `<c:prop>` per prop, each carrying its own shape:
+
+```html
+<!-- templates/components/price.html -->
+<c:component>
+    <c:prop name="variant" default="primary"/>
+    <c:prop name="quantity" type="int" required/>
+    <c:prop name="amount" type="java.math.BigDecimal"/>
+</c:component>
+<span th:classappend="${'price--' + this.variant}" th:text="${this.amount}">?</span>
+```
+
+`<c:component>`'s children are declarations, never markup — the component's own markup is its sibling, as in the example above. Writing anything else inside it, or leaving a `<c:prop>` open instead of self-closing it, fails at startup naming the file.
+
+| Attribute | Meaning |
+|---|---|
+| `name` | The prop's name, kebab-case, required |
+| `required` | The caller must provide this attribute — checked before any default |
+| `default` | A literal fallback used when the attribute is omitted — never an expression; the declaration describes a prop's shape, not its logic |
+| `type` | A short name (`string`, `int`, `long`, `double`, `boolean`) or a fully-qualified class name |
+
+`type` means two different things depending on which kind it names:
+
+- **A primitive or `string`** is a *conversion* instruction, parsing the caller's plain-text attribute the same way `PropCoercion` already does for a record's own fields.
+- **Anything else** is a *contract assertion*: whatever expression the caller passed must evaluate to that type. `<c:price c:amount="${order.total}"/>` passes an already-typed `BigDecimal` straight through; `<c:price amount="12.00"/>` fails loudly, since there is no plain-text conversion to an arbitrary domain type.
+
+This is exactly what a classless component otherwise cannot have — an object-valued prop with a checked contract — and it is the signal that you have probably outgrown classless if it is most of what your props are: `BigDecimal` on an otherwise markup-only `<c:price>` is fine; three domain props and a nested property chain means write the record.
+
+Resolution happens at scan time, like `impl` — a typo'd `type` fails at startup, naming the file and the prop.
 
 ## Context
 
