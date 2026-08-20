@@ -62,14 +62,20 @@ public final class ComponentRegistry {
     private final Map<String, List<ComponentDescriptor>> byPrefix;
     private final Map<String, List<ComponentDescriptor>> byTagName;
     private final Map<ComponentSource, List<ComponentDescriptor>> bySource;
+    private final Set<ComponentSource> requestedSources;
 
-    private ComponentRegistry(List<ComponentDescriptor> descriptors) {
+    private ComponentRegistry(List<ComponentDescriptor> descriptors, Set<ComponentSource> requestedSources) {
         List<ComponentDescriptor> sorted = new ArrayList<>(descriptors);
         sorted.sort(Comparator.comparing(ComponentDescriptor::prefix).thenComparing(ComponentDescriptor::tagName));
         this.components = List.copyOf(sorted);
         this.byPrefix = groupBy(this.components, ComponentDescriptor::prefix);
         this.byTagName = groupBy(this.components, ComponentDescriptor::tagName);
         this.bySource = groupBy(this.components, ComponentDescriptor::source);
+        // Widened with every source actually claimed by a descriptor: aggregate() merges registries built
+        // separately, and a caller cannot be trusted to have passed every one of them in explicitly.
+        Set<ComponentSource> widened = new LinkedHashSet<>(requestedSources);
+        this.components.forEach(descriptor -> widened.add(descriptor.source()));
+        this.requestedSources = Set.copyOf(widened);
     }
 
     /**
@@ -81,8 +87,14 @@ public final class ComponentRegistry {
         return scan(source, prefix, findHtmlResources());
     }
 
-    /** Scans every source and merges the results into the one registry a dialect is built from. */
+    /**
+     * Scans every source and merges the results into the one registry a dialect is built from. Namespace
+     * uniqueness is checked first, from the source list alone — before anything is walked — since two
+     * libraries claiming the same namespace is wrong regardless of what either one's templates turn out to
+     * contain.
+     */
     public static ComponentRegistry scan(Collection<ComponentSource> sources, String prefix) {
+        requireNoDuplicateNamespaces(sources);
         // One classpath walk shared across every source, rather than one per source.
         Set<String> htmlResources = findHtmlResources();
         return aggregate(sources.stream().map(source -> scan(source, prefix, htmlResources)).toList());
@@ -108,9 +120,48 @@ public final class ComponentRegistry {
             if (declaration == null) {
                 continue;
             }
+            requireNamespaceIfDeclared(source, tagName, describeForErrors);
             descriptors.add(toDescriptor(declaration, source, prefix, tagName, templatePath, describeForErrors));
         }
-        return new ComponentRegistry(descriptors);
+        return new ComponentRegistry(descriptors, Set.of(source));
+    }
+
+    /**
+     * Fails at construction, from the source list alone, if two sources declare the same {@code
+     * tagNamespace} — detectable with no enumeration at all, since a namespace owning a tag's space by
+     * construction is meaningless if two sources both claim to own the same one.
+     */
+    private static void requireNoDuplicateNamespaces(Collection<ComponentSource> sources) {
+        Map<String, List<ComponentSource>> byNamespace = new LinkedHashMap<>();
+        for (ComponentSource source : sources) {
+            if (source.tagNamespace() != null) {
+                byNamespace.computeIfAbsent(source.tagNamespace(), k -> new ArrayList<>()).add(source);
+            }
+        }
+        byNamespace.forEach((namespace, claimants) -> {
+            if (claimants.size() > 1) {
+                throw new IllegalStateException(CompositionDialect.DIALECT_NAME + ": the \"" + namespace
+                        + "\" tag namespace is declared by more than one source: "
+                        + claimants.stream().map(ComponentSource::templatesPath).collect(Collectors.joining(", "))
+                        + " — a namespace is a library's own to claim once.");
+            }
+        });
+    }
+
+    /**
+     * Enforced, not applied: a namespaced source writes its own {@code <namespace>-*} file names, and this
+     * only checks it did. Kept as a hard scan-time failure — the same "boot fails with a clear message"
+     * treatment as an unresolvable {@code impl} — because the alternative is a library silently shipping a
+     * tag outside the territory its namespace promised.
+     */
+    private static void requireNamespaceIfDeclared(ComponentSource source, String tagName, String describeForErrors) {
+        String namespace = source.tagNamespace();
+        if (namespace == null || tagName.startsWith(namespace + "-")) {
+            return;
+        }
+        throw new IllegalStateException(CompositionDialect.DIALECT_NAME + ": " + describeForErrors
+                + " is under a source namespaced \"" + namespace + "\", so its tag must be named \""
+                + namespace + "-*\" — rename the file to " + namespace + "-" + tagName + ".html.");
     }
 
     private static ComponentDeclarationReader.Declaration readDeclaration(
@@ -229,10 +280,12 @@ public final class ComponentRegistry {
      */
     public static ComponentRegistry aggregate(Collection<ComponentRegistry> registries) {
         List<ComponentDescriptor> all = new ArrayList<>();
+        Set<ComponentSource> sources = new LinkedHashSet<>();
         for (ComponentRegistry registry : registries) {
             all.addAll(registry.components);
+            sources.addAll(registry.requestedSources);
         }
-        return new ComponentRegistry(all);
+        return new ComponentRegistry(all, sources);
     }
 
     /** All known components, deterministically ordered by {@code (prefix, tagName)}. Immutable. */
@@ -330,6 +383,58 @@ public final class ComponentRegistry {
                 .append(RESERVED_TAG_NAMES.stream().sorted().collect(Collectors.joining(", ")))
                 .append(" belong to the dialect's own grammar.");
         throw new IllegalStateException(message.toString());
+    }
+
+    /**
+     * Fails fast if any source contributed no components at all — almost certainly a wrong
+     * {@code templatesPath}, rather than a source that genuinely has nothing: a misconfigured source
+     * otherwise looks identical to an empty one, and the mistake is only found once a tag from it is used
+     * and reported as unresolved with no hint of why.
+     */
+    public void requireNoEmptySources() {
+        List<ComponentSource> empty = requestedSources.stream()
+                .filter(source -> bySource.getOrDefault(source, List.of()).isEmpty())
+                .toList();
+        if (empty.isEmpty()) {
+            return;
+        }
+        StringBuilder message = new StringBuilder(CompositionDialect.DIALECT_NAME
+                + ": source(s) that declared a templates path but contributed no components:\n");
+        for (ComponentSource source : empty) {
+            message.append("  ").append(source.templatesPath())
+                    .append(source.tagNamespace() != null ? " (namespace \"" + source.tagNamespace() + "\")" : "")
+                    .append("\n");
+        }
+        message.append("Almost certainly a wrong templatesPath, or a resolver prefix pointing away from it — "
+                + "not a source that legitimately has nothing.");
+        throw new IllegalStateException(message.toString());
+    }
+
+    /**
+     * The explanatory clause for an unresolved tag, naming the likely cause rather than leaving "check the
+     * spelling" as the only hint: a misspelling inside a namespace this registry knows about, a namespace
+     * nothing here provides, or neither — a plain lookup among the application's own, unnamespaced tags.
+     */
+    String describeUnresolvedTag(String tagName) {
+        int dash = tagName.indexOf('-');
+        if (dash <= 0) {
+            return "not found among your own components";
+        }
+        String candidate = tagName.substring(0, dash);
+        List<String> offeredByNamespace = components.stream()
+                .filter(descriptor -> candidate.equals(descriptor.source().tagNamespace()))
+                .map(ComponentDescriptor::tagName)
+                .sorted()
+                .toList();
+        if (!offeredByNamespace.isEmpty()) {
+            return "the \"" + candidate + "\" namespace offers: " + String.join(", ", offeredByNamespace);
+        }
+        boolean namespaceKnown = requestedSources.stream().anyMatch(source -> candidate.equals(source.tagNamespace()));
+        if (namespaceKnown) {
+            return "the \"" + candidate + "\" namespace is declared but offers no components at all — check "
+                    + "its source's templatesPath";
+        }
+        return "nothing provides the \"" + candidate + "\" namespace — is a dependency missing?";
     }
 
     /**

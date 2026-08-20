@@ -191,7 +191,7 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
         IProcessableElementTag rootElement = (IProcessableElementTag) tag.get(0);
         String tagName = rootElement.getElementDefinition().getElementName().getElementName();
         ComponentDescriptor descriptor = registry.findByTagName(dialectPrefix, tagName)
-                .orElseThrow(() -> unresolvedTag(rootElement));
+                .orElseThrow(() -> unresolvedTag(rootElement, tagName));
 
         CachedFragment cached = getOrLoadFragment(context, descriptor);
         FragmentInfo fragment = cached.info();
@@ -234,11 +234,10 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
         renderFragmentInto(tag, fragment, slots, modelFactory);
     }
 
-    private TemplateProcessingException unresolvedTag(IProcessableElementTag rootElement) {
+    private TemplateProcessingException unresolvedTag(IProcessableElementTag rootElement, String tagName) {
         return new TemplateProcessingException(CompositionDialect.DIALECT_NAME
-                + ": <" + rootElement.getElementCompleteName() + "> is not a registered component tag. Check that "
-                + "it is spelled correctly and that its component class is discovered by one of this dialect's "
-                + "ComponentSources.");
+                + ": <" + rootElement.getElementCompleteName() + "> is not a registered component tag — "
+                + registry.describeUnresolvedTag(tagName) + ".");
     }
 
     private static String describeImpl(ComponentDescriptor descriptor) {

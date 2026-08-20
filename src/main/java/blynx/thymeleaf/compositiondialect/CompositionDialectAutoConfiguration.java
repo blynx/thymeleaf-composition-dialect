@@ -1,7 +1,9 @@
 package blynx.thymeleaf.compositiondialect;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.SmartInitializingSingleton;
@@ -28,6 +30,10 @@ import org.thymeleaf.TemplateEngine;
  *     return new ComponentSource("designsystem", "com.example.designsystem.components");
  * }
  * }</pre>
+ *
+ * <p>A library with no Java code of its own — a pure-HTML pattern library — can skip the bean entirely and
+ * ship a {@code META-INF/thymeleaf-composition/source.properties} classpath descriptor instead; this
+ * auto-configuration discovers those too, see {@link ComponentSource#discoverFromClasspath()}.
  */
 @AutoConfiguration(after = ThymeleafAutoConfiguration.class)
 @EnableConfigurationProperties(CompositionDialectProperties.class)
@@ -48,14 +54,32 @@ public class CompositionDialectAutoConfiguration {
         if (properties.templatesPath() != null && !properties.templatesPath().isBlank()) {
             sources.add(new ComponentSource(properties.templatesPath(), properties.defaultPackage()));
         }
-        librarySources.orderedStream().forEach(sources::add);
+        // Explicit config, then hand-published beans, then classpath descriptors — first claim of a given
+        // (templatesPath, tagNamespace) wins, so a library that ships both a bean and a descriptor (or is
+        // reachable on the classpath twice over) is not registered twice.
+        Set<List<String>> claimed = new LinkedHashSet<>();
+        sources.forEach(source -> claimed.add(sourceIdentity(source)));
+        librarySources.orderedStream().forEach(source -> {
+            if (claimed.add(sourceIdentity(source))) {
+                sources.add(source);
+            }
+        });
+        ComponentSource.discoverFromClasspath().forEach(source -> {
+            if (claimed.add(sourceIdentity(source))) {
+                sources.add(source);
+            }
+        });
         if (sources.isEmpty()) {
             throw new IllegalStateException(CompositionDialect.DIALECT_NAME
                     + ": no components to scan — set thymeleaf.composition.templates-path to your own "
                     + "components root, or import a component library that publishes a "
-                    + ComponentSource.class.getSimpleName() + " bean.");
+                    + ComponentSource.class.getSimpleName() + " bean or a classpath descriptor.");
         }
         return new CompositionDialect(sources, CompositionDialect.DIALECT_NAME, properties.prefix());
+    }
+
+    private static List<String> sourceIdentity(ComponentSource source) {
+        return List.of(source.templatesPath(), String.valueOf(source.tagNamespace()));
     }
 
     @Bean

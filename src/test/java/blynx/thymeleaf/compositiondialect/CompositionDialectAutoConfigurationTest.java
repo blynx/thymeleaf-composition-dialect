@@ -62,11 +62,14 @@ class CompositionDialectAutoConfigurationTest {
                         "thymeleaf.composition.default-package=" + APP_PACKAGE)
                 .run(context -> assertEquals("c", context.getBean(CompositionDialect.class).getPrefix()));
 
+        // <c:component> is itself prefix-bound dialect grammar, so a custom prefix needs templates that
+        // spell their declaration with it — prefixcomponents already declares <x:component> for exactly
+        // this reason (see MultiPrefixTest).
         runner.withPropertyValues(
-                        "thymeleaf.composition.templates-path=" + APP_PATH,
-                        "thymeleaf.composition.default-package=" + APP_PACKAGE,
-                        "thymeleaf.composition.prefix=ui")
-                .run(context -> assertEquals("ui", context.getBean(CompositionDialect.class).getPrefix()));
+                        "thymeleaf.composition.templates-path=prefixcomponents",
+                        "thymeleaf.composition.default-package=blynx.thymeleaf.compositiondialect.prefixcomponents",
+                        "thymeleaf.composition.prefix=x")
+                .run(context -> assertEquals("x", context.getBean(CompositionDialect.class).getPrefix()));
     }
 
     @Test

@@ -70,9 +70,11 @@ public class CompositionDialect extends AbstractProcessorDialect {
     public CompositionDialect(List<ComponentSource> sources, String name, String prefix, int processorPrecedence) {
         super(name, prefix, processorPrecedence);
         this.registry = ComponentRegistry.scan(sources, prefix);
-        // Both run over the merged registry: a tag claimed by two sources is invisible to either alone.
+        // All three run over the merged registry: a tag claimed by two sources is invisible to either
+        // alone, and a source contributing nothing looks identical to an empty one from outside itself.
         this.registry.requireNoCollisions();
         this.registry.requireNoReservedTagNames();
+        this.registry.requireNoEmptySources();
     }
 
     /** The components this dialect discovered at startup, across every source. */
