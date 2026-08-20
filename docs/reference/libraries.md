@@ -1,71 +1,82 @@
 # Component libraries
 
-A component library is an ordinary jar holding component classes and their templates. An application importing one gets its components as tags alongside its own, from the same dialect and under the same prefix.
+A component library is an ordinary jar holding component templates, and optionally the classes that back them. An application importing one gets its components as tags alongside its own, from the same dialect and under the same prefix.
 
 ## Publishing one
 
-Put your components in one package and their templates under a path of your own:
+Put your templates under a path of your own. Classes, if you have any, can live anywhere — discovery walks templates, not packages, so there is no requirement that your classes share one scannable package:
 
 ```
-src/main/java/com/example/designsystem/components/DsCard.java
-src/main/resources/templates/designsystem/ds-card.html
+src/main/resources/templates/webawesome/wa-button.html
+src/main/java/com/example/webawesome/Button.java
+```
+
+```html
+<!-- templates/webawesome/wa-button.html -->
+<c:component impl="Button"/>
+<button class="wa-button" c:rest><c:slot/></button>
 ```
 
 Publish a `ComponentSource` bean from your own auto-configuration, and importing your library is just adding the dependency:
 
 ```java
 @AutoConfiguration
-public class DesignSystemAutoConfiguration {
+public class WebAwesomeAutoConfiguration {
 
     @Bean
-    ComponentSource designSystemComponents() {
-        return new ComponentSource("com.example.designsystem.components", "designsystem");
+    ComponentSource webAwesomeComponents() {
+        return ComponentSource.namespaced("webawesome", "wa", "com.example.webawesome");
     }
 }
 ```
 
 A `ComponentSource` is what a library publishes, not a `CompositionDialect`. The importing application builds the one dialect, from its own components and every source it finds.
 
-## Name your classes for your library
+### No Java at all
 
-Every source shares the one dialect prefix, so the tag name is the only thing keeping your components apart from the application's. Carry your library's name in the class name, the way web components do:
+A library with no classes — a pure design-system wrapper, all markup — does not need the auto-configuration either. Ship a classpath descriptor instead, and the application discovers it automatically:
 
-```java
-public record DsCard(String title, CompositionComponentContext context)
-        implements CompositionComponent { }     // <c:ds-card>
+```properties
+# META-INF/thymeleaf-composition/source.properties
+templates-path=webawesome
+namespace=wa
 ```
 
-Nothing enforces this. If you ship a plain `Card` and the importing application has one too, its startup fails with both class names — and the fix is a rename in whichever of the two the developer actually owns, which may well not be yours. Enforce it on your side instead:
+`default-package` is a third, optional key, for a library that does have classes but would rather skip the `@Bean` and `@AutoConfiguration` machinery entirely. This is the smallest thing that works: no interface to implement, no class to write, no Spring required — and it is why a pure-HTML pattern library is possible at all.
+
+## Declare your namespace once
+
+Every source shares the one dialect prefix, so the tag name is the only thing keeping your components apart from the application's. Declare a `tagNamespace` on your source, and it is enforced, not merely applied: every template under your `templatesPath` must itself be named `<namespace>-*`, checked when it is discovered.
 
 ```java
-@Test
-void everyComponentCarriesTheLibrarysName() {
-    ComponentRegistry registry = ComponentRegistry.scan(
-            new ComponentSource("com.example.designsystem.components"), "c");
-
-    assertFalse(registry.components().isEmpty());
-    registry.components().forEach(component ->
-            assertTrue(component.tagName().startsWith("ds-"), component.tagName()));
-}
+return ComponentSource.namespaced("webawesome", "wa", "com.example.webawesome");
 ```
 
-Your tag names are public API. They are compiled into the templates of every application using you, and an importing application cannot rename or alias them — so pick the prefix once, before your first release.
+```
+webawesome/wa-button.html   → <c:wa-button>
+webawesome/card.html        → build error: not named "wa-*"
+```
 
-Keep the templates path distinct from the tag prefix, and make it the longer of the two. The tag prefix wants to be short because it is typed on every tag; the templates path wants to be distinctive, because it is the only thing stopping your `templates/components/card.html` from shadowing another library's on the classpath. `ds-` and `designsystem/` rather than both.
+This is stricter than a convention you remember to keep — a template you forget to prefix fails at startup, naming the file and the namespace it violated, rather than shipping and silently risking a collision with whatever else claims `<c:card>`. And it is checked once, at the source, rather than once per file: no test to write, no reviewer to catch it.
+
+Two libraries both declaring `wa` fail too, at construction, from the source list alone — before anything is even walked, so the error can name both jars without having to discover a clashing tag first.
+
+Your tag names are public API. They are compiled into the templates of every application using you, and an importing application cannot rename or alias them — so pick the namespace once, before your first release. Keep it short: it is typed on every tag your library ships. The `templatesPath` can be longer and more distinctive, since it only has to avoid colliding with another library's on the classpath — `wa` and `webawesome/`, rather than both short.
 
 ## Referring to your own components
 
 Write them exactly as anyone else would:
 
 ```html
-<!-- templates/designsystem/ds-card.html -->
-<article class="ds-card">
-  <header><c:ds-badge c:label="${this.title}" /></header>
-  <div class="ds-card__body"><c:slot /></div>
+<!-- templates/webawesome/wa-card.html -->
+<c:component impl="Card"/>
+<article class="wa-card">
+  <header><c:wa-badge c:label="${this.title}" /></header>
+  <div class="wa-card__body"><c:slot /></div>
 </article>
 ```
 
-Because there is one prefix over every source, nothing about your registration is baked into the HTML you ship. That is also why an importing application cannot remap your tags: the reference above resolves by tag name alone, with no notion of which template it was written in, so a renamed `<c:ds-badge>` would find whatever else claimed that tag.
+Because there is one prefix over every source, nothing about your registration is baked into the HTML you ship. That is also why an importing application cannot remap your tags: the reference above resolves by tag name alone, with no notion of which template it was written in, so a renamed `<c:wa-badge>` would find whatever else claimed that tag.
 
 ## Packaging
 
@@ -75,19 +86,19 @@ Because there is one prefix over every source, nothing about your registration i
 
 ## Template resolution
 
-Your templates are resolved by the *application's* resolver chain, not one of your own. Under Spring Boot that means `classpath:/templates/`, so `templates/designsystem/ds-card.html` inside your jar is found with no setup at all.
+Your templates are resolved by the *application's* resolver chain, not one of your own. Under Spring Boot that means `classpath:/templates/`, so `templates/webawesome/wa-button.html` inside your jar is found with no setup at all.
 
-It also means the application decides where that root is. Set `spring.thymeleaf.prefix` to `classpath:/views/` and the resolver goes looking for `views/designsystem/ds-card.html`, which your jar does not have.
+It also means the application decides where that root is. Set `spring.thymeleaf.prefix` to `classpath:/views/` and the resolver goes looking for `views/webawesome/wa-button.html`, which your jar does not have. `verify-templates` (see [Setup](setup.md)) catches exactly this at startup: discovery walks the classpath directly and finds your template regardless, so a resolver-chain mismatch shows up as "found while walking the classpath, but the application's own resolver chain cannot resolve it" rather than as a per-component failure the first time someone renders it.
 
 If you need to be independent of that, publish your own resolver too, scoped to your own path so it never claims the application's templates:
 
 ```java
 @Bean
-ITemplateResolver designSystemTemplates() {
+ITemplateResolver webAwesomeTemplates() {
     ClassLoaderTemplateResolver resolver = new ClassLoaderTemplateResolver();
-    resolver.setPrefix("designsystem-templates/");
+    resolver.setPrefix("webawesome-templates/");
     resolver.setSuffix(".html");
-    resolver.setResolvablePatterns(Set.of("designsystem/**"));
+    resolver.setResolvablePatterns(Set.of("webawesome/**"));
     resolver.setCheckExistence(true);
     resolver.setOrder(1);
     return resolver;

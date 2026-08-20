@@ -23,16 +23,16 @@ A UI component templating style for Thymeleaf.
 
 ## Setup
 
-Add the dialect to Thymeleaf. Give it the package to scan for components:
+Add the dialect to Thymeleaf. Give it the templates path to walk for components:
 
 ```java
-templateEngine.addDialect(new CompositionDialect("com.example.demo.components"));
+templateEngine.addDialect(new CompositionDialect("components"));
 ```
 
-For Spring Boot, set the package in `application.properties`:
+For Spring Boot, set the templates path in `application.properties`:
 
 ```properties
-thymeleaf.composition.component-package=com.example.demo.components
+thymeleaf.composition.templates-path=components
 ```
 
 See [Setup](docs/reference/setup.md) for all configuration options.
