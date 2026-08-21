@@ -39,6 +39,7 @@ import org.thymeleaf.processor.element.IElementModelProcessor;
 import org.thymeleaf.processor.element.IElementModelStructureHandler;
 import org.thymeleaf.processor.element.MatchingAttributeName;
 import org.thymeleaf.processor.element.MatchingElementName;
+import org.thymeleaf.standard.expression.IStandardExpressionParser;
 import org.thymeleaf.standard.expression.StandardExpressions;
 import org.thymeleaf.standard.processor.StandardUnlessTagProcessor;
 import org.thymeleaf.templatemode.TemplateMode;
@@ -102,6 +103,9 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
     // have an IEngineConfiguration in hand; cached the same way as slotAttributeName above.
     private volatile StandardAttributes standardTextAttributes = null;
 
+    // The c:_caller wrapper put around every piece of slot content, built once instead of per slot fill.
+    private volatile SyntheticTags syntheticTags = null;
+
     /**
      * Events between slot markers; {@code segments.length == slotMarkerNames.length + 1}.
      * {@code fallbacks[i]} holds marker {@code i}'s fallback content, parsed the very same way as the
@@ -129,17 +133,38 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
     }
 
     /**
-     * Everything a component tag needs that is derived once and then reused across renders: the parsed
-     * fragment and the constructor handle for its component class. Both are cheap to rebuild, so both share
-     * one cache entry and one validity, rather than each keeping a separate lazily-built field.
+     * Everything a component tag needs that is derived once and then reused across renders: the descriptor
+     * it resolved to, the parsed fragment and the constructor handle for its component class. All are cheap
+     * to rebuild, so they share one cache entry and one validity, rather than each keeping a separate
+     * lazily-built field. Holding the descriptor here is what lets a cache hit skip the registry lookup
+     * entirely — the cache is keyed by tag name and this instance only sees its own prefix, so a hit has
+     * already answered the same question {@link ComponentRegistry#descriptorFor} would.
      */
-    private record CachedFragment(FragmentInfo info, Function<CompositionComponentContext, CompositionComponent> componentFactory,
+    private record CachedFragment(ComponentDescriptor descriptor, FragmentInfo info,
+                                  Function<CompositionComponentContext, CompositionComponent> componentFactory,
                                   ICacheEntryValidity validity) {
     }
 
     /** The standard dialect's prefix and the names of its own that this processor handles specially. */
     private record StandardAttributes(String prefix, AttributeName text, AttributeName utext,
                                       String textCompleteName, String utextCompleteName, String blockTagName) {
+    }
+
+    /**
+     * The tags this processor synthesizes rather than reads out of a template: the {@code c:_caller} wrapper
+     * that goes around every piece of slot content, and the bare {@code th:block} the {@code th:text}
+     * shorthand becomes. Template events are immutable, so one instance of each can be handed to every
+     * render — worth doing because building one resolves its name through the engine's element-definition
+     * repository, whose case-insensitive binary search was the hottest single frame under this processor.
+     *
+     * <p>Held against the configuration it was built from, rather than in a bare field like the interned
+     * names above: an element definition carries the processors matched to it, so a dialect instance added
+     * to two engines must not hand one engine's definitions to the other. {@code block*} is {@code null}
+     * when the standard dialect isn't configured, exactly as {@link StandardAttributes} is.
+     */
+    private record SyntheticTags(IEngineConfiguration configuration, IOpenElementTag callerOpen,
+                                 ICloseElementTag callerClose, IOpenElementTag blockOpen,
+                                 ICloseElementTag blockClose) {
     }
 
     public CompositionElementModelProcessor(String dialectPrefix, ComponentRegistry registry) {
@@ -190,16 +215,16 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
         IModelFactory modelFactory = context.getModelFactory();
         IProcessableElementTag rootElement = (IProcessableElementTag) tag.get(0);
         String tagName = rootElement.getElementDefinition().getElementName().getElementName();
-        ComponentDescriptor descriptor = registry.findByTagName(dialectPrefix, tagName)
-                .orElseThrow(() -> unresolvedTag(rootElement, tagName));
 
-        CachedFragment cached = getOrLoadFragment(context, descriptor);
+        CachedFragment cached = getOrLoadFragment(context, rootElement, tagName);
+        ComponentDescriptor descriptor = cached.descriptor();
         FragmentInfo fragment = cached.info();
         StandardAttributes textAttrs = standardTextAttributes(context.getConfiguration());
+        SyntheticTags synthetic = syntheticTags(context.getConfiguration(), modelFactory, textAttrs);
 
         Map<String, IModel> slots = extractSlots(tag, modelFactory, slotAttributeName(context.getConfiguration()));
         removeBlankDefaultSlot(slots);
-        IModel textShorthand = textShorthandSlotContent(rootElement, textAttrs, modelFactory);
+        IModel textShorthand = textShorthandSlotContent(rootElement, textAttrs, synthetic, modelFactory);
         if (textShorthand != null) {
             // th:text/th:utext silently wins over any explicit default-slot children, mirroring th:text's
             // own "replaces whatever body was there" behavior on a hand-written element.
@@ -231,7 +256,7 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
                 context.getVariable(ComponentFrame.VARIABLE) instanceof ComponentFrame frame ? frame : null));
 
         tag.reset();
-        renderFragmentInto(tag, fragment, slots, modelFactory);
+        renderFragmentInto(tag, fragment, slots, synthetic);
     }
 
     private TemplateProcessingException unresolvedTag(IProcessableElementTag rootElement, String tagName) {
@@ -244,11 +269,15 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
         return descriptor.componentClass().map(Class::getName).orElse("classless — no impl bound");
     }
 
-    private CachedFragment getOrLoadFragment(ITemplateContext context, ComponentDescriptor descriptor) {
-        String tagName = descriptor.tagName();
+    private CachedFragment getOrLoadFragment(ITemplateContext context, IProcessableElementTag rootElement,
+                                             String tagName) {
         CachedFragment cached = fragmentCache.get(tagName);
         if (cached != null && cached.validity().isCacheStillValid()) {
             return cached;
+        }
+        ComponentDescriptor descriptor = registry.descriptorFor(dialectPrefix, tagName);
+        if (descriptor == null) {
+            throw unresolvedTag(rootElement, tagName);
         }
 
         TemplateModel templateModel;
@@ -273,7 +302,7 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
         // Cache only cacheable templates and re-check validity per hit (dev-mode edits, TTL expiry).
         // Not flushed by TemplateEngine.clearTemplateCaches().
         ICacheEntryValidity validity = templateModel.getTemplateData().getValidity();
-        CachedFragment fresh = new CachedFragment(info, componentFactory, validity);
+        CachedFragment fresh = new CachedFragment(descriptor, info, componentFactory, validity);
         if (validity.isCacheable()) {
             // Plain put, not computeIfAbsent: the mapping function would hold a bin lock across a template
             // parse. A race duplicates this work harmlessly; both threads put the same equivalent entry.
@@ -427,7 +456,7 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
      * output; the bet lost silently.
      */
     private void renderFragmentInto(IModel target, FragmentInfo fragment, Map<String, IModel> slots,
-                                    IModelFactory modelFactory) {
+                                    SyntheticTags synthetic) {
         IModel[] segments = fragment.segments();
         String[] slotNames = fragment.slotMarkerNames();
         FragmentInfo[] fallbacks = fragment.fallbacks();
@@ -436,14 +465,43 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
         for (int i = 0; i < slotNames.length; i++) {
             IModel content = slots.get(slotNames[i]);
             if (content != null) {
-                target.add(modelFactory.createOpenElementTag(callerTagName));
+                boolean wrap = !readsNothing(content);
+                if (wrap) {
+                    target.add(synthetic.callerOpen());
+                }
                 target.addModel(content);
-                target.add(modelFactory.createCloseElementTag(callerTagName));
+                if (wrap) {
+                    target.add(synthetic.callerClose());
+                }
             } else if (fallbacks[i] != null) {
-                renderFragmentInto(target, fallbacks[i], slots, modelFactory);
+                renderFragmentInto(target, fallbacks[i], slots, synthetic);
             }
             target.addModel(segments[i + 1]);
         }
+    }
+
+    /**
+     * Whether {@code content} cannot read {@code this} at all, in which case the {@code c:_caller} wrapper
+     * around it has nothing to put back and is left off. That holds when every event is text carrying no
+     * inlined expression: there is no element for a processor to claim, and with no {@code [[} or
+     * {@code [(} in the text there is nothing for the standard dialect's inlining to evaluate either.
+     *
+     * <p>Checked because a component handed a plain string body — {@code <c:button>Save</c:button>} — is
+     * the most ordinary call there is, and the wrapper costs it two synthetic tags plus a full processor
+     * dispatch through {@link CompositionCallerProcessor} for a frame nothing goes on to read. Anything
+     * this cannot prove inert (an element, a comment, a CDATA section) is wrapped exactly as before.
+     */
+    private static boolean readsNothing(IModel content) {
+        for (int i = 0, size = content.size(); i < size; i++) {
+            if (!(content.get(i) instanceof IText event)) {
+                return false;
+            }
+            String text = event.getText();
+            if (text.indexOf("[[") >= 0 || text.indexOf("[(") >= 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -555,18 +613,21 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
      * configured at all (in which case neither attribute could mean anything).
      */
     private IModel textShorthandSlotContent(IProcessableElementTag rootElement, StandardAttributes textAttrs,
-                                            IModelFactory modelFactory) {
+                                            SyntheticTags synthetic, IModelFactory modelFactory) {
         if (textAttrs == null) {
             return null;
         }
-        String text = rootElement.hasAttribute(textAttrs.text()) ? rootElement.getAttributeValue(textAttrs.text()) : null;
-        String utext = rootElement.hasAttribute(textAttrs.utext()) ? rootElement.getAttributeValue(textAttrs.utext()) : null;
+        // Read straight, without asking hasAttribute first: an absent attribute and one written with no
+        // value both read as null, and both mean "no shorthand here" — so the second lookup only ever
+        // confirmed what this one already says, at the price of a second search through the tag.
+        String text = rootElement.getAttributeValue(textAttrs.text());
+        String utext = rootElement.getAttributeValue(textAttrs.utext());
         if (text == null && utext == null) {
             return null;
         }
         // Both present at once: don't validate ourselves, copy both onto the synthetic tag and let the
         // standard dialect's own precedence resolve it, exactly as it would on a hand-written element.
-        IOpenElementTag block = modelFactory.createOpenElementTag(textAttrs.blockTagName());
+        IOpenElementTag block = synthetic.blockOpen();
         if (text != null) {
             block = modelFactory.setAttribute(block, textAttrs.textCompleteName(), text);
         }
@@ -575,7 +636,7 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
         }
         IModel content = modelFactory.createModel();
         content.add(block);
-        content.add(modelFactory.createCloseElementTag(textAttrs.blockTagName()));
+        content.add(synthetic.blockClose());
         return content;
     }
 
@@ -635,7 +696,9 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
                                              StandardAttributes textAttrs, ComponentDescriptor descriptor) {
         var allAttributes = rootElement.getAllAttributes();
         Map<String, Object> attrs = HashMap.newHashMap(allAttributes.length);
-        var expressionParser = StandardExpressions.getExpressionParser(context.getConfiguration());
+        // Resolved on the first standard-prefixed attribute rather than up front: most component tags carry
+        // none at all, and then there is nothing here to parse an expression for.
+        IStandardExpressionParser expressionParser = null;
         for (var attr : allAttributes) {
             AttributeName attributeName = attr.getAttributeDefinition().getAttributeName();
             // Already relocated onto the synthetic th:block by textShorthandSlotContent; skip so they
@@ -649,9 +712,15 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
                 rejectDialectPrefixedAttribute(plainAttributeName, textAttrs, descriptor);
             } else if (textAttrs != null && textAttrs.prefix().equals(prefix)) {
                 requireSupportedStandardAttribute(plainAttributeName, textAttrs, descriptor);
-                attrs.put(plainAttributeName, attr.getValue() == null
-                        ? null
-                        : expressionParser.parseExpression(context, attr.getValue()).execute(context));
+                if (attr.getValue() == null) {
+                    attrs.put(plainAttributeName, null);
+                    continue;
+                }
+                if (expressionParser == null) {
+                    expressionParser = StandardExpressions.getExpressionParser(context.getConfiguration());
+                }
+                attrs.put(plainAttributeName,
+                        expressionParser.parseExpression(context, attr.getValue()).execute(context));
             } else {
                 attrs.put(plainAttributeName, attr.getValue());
             }
@@ -690,6 +759,25 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
             componentElementName = name;
         }
         return name;
+    }
+
+    /**
+     * Builds the synthetic tags for {@code configuration}, or returns the ones already built for it. See
+     * {@link SyntheticTags} for why this is cached and why it is keyed on the configuration.
+     */
+    private SyntheticTags syntheticTags(IEngineConfiguration configuration, IModelFactory modelFactory,
+                                        StandardAttributes textAttrs) {
+        SyntheticTags cached = syntheticTags;
+        if (cached != null && cached.configuration() == configuration) {
+            return cached;
+        }
+        SyntheticTags resolved = new SyntheticTags(configuration,
+                modelFactory.createOpenElementTag(callerTagName),
+                modelFactory.createCloseElementTag(callerTagName),
+                textAttrs == null ? null : modelFactory.createOpenElementTag(textAttrs.blockTagName()),
+                textAttrs == null ? null : modelFactory.createCloseElementTag(textAttrs.blockTagName()));
+        syntheticTags = resolved;
+        return resolved;
     }
 
     /**
@@ -742,10 +830,18 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
      */
     private static Function<CompositionComponentContext, CompositionComponent> createClasslessComponentFactory(
             List<PropSpec> propSpecs, String tagName) {
+        // Camel names resolved once here, for the same reason the record binder resolves its attribute
+        // names once: a prop's read name is fixed by its declaration, and only its value changes between
+        // occurrences.
+        PropSpec[] specs = propSpecs.toArray(new PropSpec[0]);
+        String[] camelNames = new String[specs.length];
+        for (int i = 0; i < specs.length; i++) {
+            camelNames[i] = ComponentRegistry.camelCase(specs[i].kebabName());
+        }
         return componentContext -> {
-            Map<String, Object> camelKeyed = HashMap.newHashMap(propSpecs.size());
-            for (PropSpec spec : propSpecs) {
-                camelKeyed.put(ComponentRegistry.camelCase(spec.kebabName()), resolveClasslessProp(spec, componentContext, tagName));
+            Map<String, Object> camelKeyed = HashMap.newHashMap(specs.length);
+            for (int i = 0; i < specs.length; i++) {
+                camelKeyed.put(camelNames[i], resolveClasslessProp(specs[i], componentContext, tagName));
             }
             return new AnonymousComponent(camelKeyed, componentContext);
         };

@@ -527,9 +527,26 @@ public final class ComponentRegistry {
 
     /** The descriptor for a fully-qualified {@code prefix:tagName}, if it is registered. */
     public Optional<ComponentDescriptor> findByTagName(String prefix, String tagName) {
-        return byTagName.getOrDefault(tagName, List.of()).stream()
-                .filter(descriptor -> descriptor.prefix().equals(prefix))
-                .findFirst();
+        return Optional.ofNullable(descriptorFor(prefix, tagName));
+    }
+
+    /**
+     * The same lookup as {@link #findByTagName}, without wrapping the answer. This runs once per component
+     * occurrence on the render path, where the stream-and-{@link Optional} form allocated a pipeline, two
+     * lambdas and an {@code Optional} for what is a hash lookup and a one-element scan.
+     */
+    ComponentDescriptor descriptorFor(String prefix, String tagName) {
+        List<ComponentDescriptor> claimants = byTagName.get(tagName);
+        if (claimants == null) {
+            return null;
+        }
+        for (int i = 0; i < claimants.size(); i++) {
+            ComponentDescriptor descriptor = claimants.get(i);
+            if (descriptor.prefix().equals(prefix)) {
+                return descriptor;
+            }
+        }
+        return null;
     }
 
     private static String describeClaimant(ComponentDescriptor descriptor) {

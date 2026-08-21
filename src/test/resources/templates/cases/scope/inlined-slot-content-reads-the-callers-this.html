@@ -1,0 +1,8 @@
+<!--
+  CASE      The text inliner's own double-bracket syntax reads ${this} too, and slot content that is
+            nothing but such a text run is still content the caller wrote. inliner.html passes one
+            inlined read of its own label to <c:panel> as the whole body, so it must resolve against the
+            inliner — the component the text was written in — and not against the panel receiving it.
+  EXPECT    written-by-inliner, while the panel still reads its own title
+-->
+<c:inliner label="written-by-inliner"/>

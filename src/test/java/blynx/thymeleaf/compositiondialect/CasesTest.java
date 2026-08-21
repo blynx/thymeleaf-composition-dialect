@@ -342,6 +342,14 @@ class CasesTest {
         }
 
         @Test
+        void inlinedSlotContentReadsTheCallersThis() {
+            String out = render("scope/inlined-slot-content-reads-the-callers-this");
+
+            assertTrue(out.contains("written-by-inliner"), out);
+            assertTrue(out.contains("data-title=\"inliner\""), out);
+        }
+
+        @Test
         void aFallbackReadsTheComponentsOwnThis() {
             assertEquals("fallback-scope", textOf(render("scope/a-fallback-reads-the-components-own-this"),
                     "in-fallback"));

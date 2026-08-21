@@ -15,6 +15,14 @@ public class ComponentAttributes {
     private final Map<String, Object> raw;
     private final Set<String> props;
 
+    /**
+     * Computed on first ask and kept: both inputs are fixed for this occurrence, so every later ask —
+     * {@code c:rest} on one element, {@code ${this.restAttributes}} on another — has the same answer.
+     * Not synchronized, and it needs not be: one of these belongs to one component occurrence, which one
+     * thread renders.
+     */
+    private Map<String, Object> rest;
+
     public ComponentAttributes(Map<String, Object> raw, Set<String> props) {
         this.raw = raw;
         this.props = props;
@@ -29,6 +37,10 @@ public class ComponentAttributes {
     }
 
     public Map<String, Object> rest() {
+        Map<String, Object> computed = rest;
+        if (computed != null) {
+            return computed;
+        }
         var result = HashMap.<String, Object>newHashMap(raw.size());
         // Not Collectors.toMap: attribute values may be null, which that collector rejects.
         raw.forEach((key, value) -> {
@@ -36,6 +48,7 @@ public class ComponentAttributes {
                 result.put(key, value);
             }
         });
+        rest = result;
         return result;
     }
 }
