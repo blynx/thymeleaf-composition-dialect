@@ -1,0 +1,8 @@
+<!--
+  CASE      The marker's name is unprefixed, as on a native <slot name="…"> and as on <c:prop name="…">.
+            c:name is the natural wrong guess, since every c: attribute that rides on a caller's own
+            element — c:slot, c:rest — does need the prefix. It gets its own message rather than the
+            generic put-it-on-a-wrapping-element one, which would be no help here.
+  EXPECT    fails, telling you to spell it name instead
+-->
+<c:prefixed-name-marker>given</c:prefixed-name-marker>

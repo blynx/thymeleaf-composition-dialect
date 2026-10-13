@@ -73,6 +73,28 @@ class Config {
 }
 ```
 
+### Testing
+
+`@SpringBootTest` needs nothing extra. A test slice such as `@WebMvcTest` applies only the auto-configurations belonging to that slice, which does not include this one — and with no dialect registered, a `<c:…>` tag is not an error, it renders as literal text.
+
+Import the auto-configuration in a slice test, and assert on the rendered content:
+
+```java
+@WebMvcTest(CatalogController.class)
+@ImportAutoConfiguration(CompositionDialectAutoConfiguration.class)
+class CatalogControllerTest {
+
+    @Autowired
+    MockMvcTester mvc;
+
+    @Test
+    void rendersTheCatalogPage() {
+        assertThat(mvc.get().uri("/catalog")).hasStatusOk()
+                .bodyText().contains("Add to cart");
+    }
+}
+```
+
 ## Component libraries
 
 Components can come from several places at once — your own, plus each component library you import. Each is a `ComponentSource`: a templates path to scan, plus optionally the package a bare `impl` resolves against and a tag namespace:
@@ -87,7 +109,7 @@ Under Spring Boot you do not list them yourself: a library publishes its own `Co
 
 ### One prefix over all of them
 
-There is one dialect and one prefix, no matter how many sources there are — `c:slot`, `c:name`, `c:rest`, and `c:component` itself mean the same thing in every template, including a library's.
+There is one dialect and one prefix, no matter how many sources there are — `c:slot`, `c:rest`, and `c:component` itself mean the same thing in every template, including a library's.
 
 What keeps two sources' components apart is the tag name, always the template's own file name:
 

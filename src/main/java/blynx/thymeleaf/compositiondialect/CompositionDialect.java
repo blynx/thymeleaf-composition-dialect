@@ -16,7 +16,7 @@ import org.thymeleaf.templatemode.TemplateMode;
  *
  * <p>One dialect covers every source — the application's own components and each imported component
  * library's — rather than one dialect per library. Sharing the single prefix is what makes the dialect's
- * own grammar ({@code c:slot}, {@code c:name}, {@code c:rest}) canonical: a library's shipped templates
+ * own grammar ({@code c:slot}, {@code c:rest}, {@code c:component}) canonical: a library's shipped templates
  * spell their slot markers the same way every other template does, so nothing about the prefix is baked
  * into the HTML a library publishes. What keeps two modules' components apart is the tag name, which is
  * always the template's own file basename — a library claims its own tags by naming its files for itself,

@@ -1,0 +1,8 @@
+<!--
+  CASE      th:name on a marker is someone reaching for a slot name computed per render. Markers are found
+            while the component's template is parsed, before any expression has run, so there is no such
+            thing. It is a different mistake from writing c:name, so it gets the generic message and not
+            the spell-it-unprefixed one — which would only send you round in a circle.
+  EXPECT    fails, pointing at a wrapping element rather than at renaming the attribute
+-->
+<c:computed-name-marker>given</c:computed-name-marker>

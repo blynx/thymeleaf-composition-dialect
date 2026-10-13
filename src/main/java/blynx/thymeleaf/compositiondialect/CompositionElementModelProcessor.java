@@ -79,8 +79,14 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
     private final String dialectPrefix;
     private final ComponentRegistry registry;
     private final MatchingElementName matchingElementName;
-    private final String slotNameAttributeName;
     private final String callerTagName;
+
+    /**
+     * The one attribute a {@code c:slot} marker may carry, spelled unprefixed exactly as on a native
+     * {@code <slot name="…">} — the marker element is the dialect's own, so there is no host element's
+     * attribute for it to collide with, the same reason {@code <c:prop name="…">} is unprefixed too.
+     */
+    private static final String MARKER_NAME_ATTRIBUTE = "name";
 
     /** Keyed by tag name (unprefixed): this instance only ever sees tags under its own single prefix. */
     private final ConcurrentHashMap<String, CachedFragment> fragmentCache = new ConcurrentHashMap<>();
@@ -91,8 +97,8 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
 
     // Interned c:slot element name, resolved the same way and for the same reason as slotAttributeName
     // above. Matching by identity (rather than a raw string compare on getElementCompleteName()) is what
-    // makes <c-slot />/<data-c-slot /> recognized as the same marker as <c:slot />, exactly as c:name and
-    // data-c-name already both work on the attribute side.
+    // makes <c-slot />/<data-c-slot /> recognized as the same marker as <c:slot />, exactly as the
+    // call-site c:slot/data-c-slot attribute already works either way.
     private volatile ElementName slotElementName = null;
 
     // Interned c:component element name, resolved and cached the same way as slotElementName above —
@@ -176,7 +182,6 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
         this.dialectPrefix = dialectPrefix;
         this.registry = registry;
         this.matchingElementName = MatchingElementName.forAllElementsWithPrefix(TemplateMode.HTML, dialectPrefix);
-        this.slotNameAttributeName = dialectPrefix + ":name";
         this.callerTagName = dialectPrefix + ":" + CompositionCallerProcessor.TAG_NAME;
     }
 
@@ -369,6 +374,7 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
                 currentSegment.add(event);
                 continue;
             }
+            requireOnlyNameOnMarker((IProcessableElementTag) event, descriptor);
             segments.add(currentSegment);
             names.add(markerSlotName(event));
             if (event instanceof IStandaloneElementTag) {
@@ -445,8 +451,46 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
     }
 
     private String markerSlotName(ITemplateEvent event) {
-        String name = ((IProcessableElementTag) event).getAttributeValue(slotNameAttributeName);
+        String name = ((IProcessableElementTag) event).getAttributeValue(MARKER_NAME_ATTRIBUTE);
         return name != null ? name : CompositionComponent.DEFAULT_SLOT;
+    }
+
+    /**
+     * Rejects every attribute on a marker but its {@code name}. A marker's own tag is stripped out here,
+     * while the fragment is parsed, and never handed back to the engine — so anything else written on it
+     * has no effect whatsoever, and silently so. That is worst for control flow: {@code th:if} on a marker
+     * reads as if it gates the slot, and instead the content splices in unconditionally, which for the
+     * usual branch-per-marker shape means the caller's content quietly rendered twice.
+     *
+     * <p>The marker's name under this dialect's own prefix ({@code c:name}) gets its own message instead of
+     * the generic one, because it is the natural wrong guess: every other attribute in the dialect's
+     * grammar — {@code c:slot} at a call site, {@code c:rest} — is prefixed, and those ride on the
+     * caller's own elements where they have to be. Only on the dialect's own elements is there nothing to
+     * collide with, which is why the marker's {@code name} and {@code <c:prop name>} are bare. Telling
+     * someone who wrote {@code c:name} to put it on a wrapping element would be no help at all.
+     */
+    private void requireOnlyNameOnMarker(IProcessableElementTag marker, ComponentDescriptor descriptor) {
+        for (var attr : marker.getAllAttributes()) {
+            AttributeName attributeName = attr.getAttributeDefinition().getAttributeName();
+            String plainName = attributeName.getAttributeName();
+            if (attributeName.getPrefix() == null && MARKER_NAME_ATTRIBUTE.equalsIgnoreCase(plainName)) {
+                continue;
+            }
+            String written = attr.getAttributeCompleteName();
+            // Only under this dialect's prefix: th:name is someone reaching for a computed slot name,
+            // which is a different mistake and not one "spell it unprefixed" would fix.
+            boolean isPrefixedName = dialectPrefix.equals(attributeName.getPrefix())
+                    && MARKER_NAME_ATTRIBUTE.equalsIgnoreCase(plainName);
+            throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME
+                    + ": <" + dialectPrefix + ":slot> in component \"" + descriptor.tagName() + "\" ("
+                    + descriptor.templatePath() + ".html) carries " + written + ". A slot marker takes "
+                    + "only " + MARKER_NAME_ATTRIBUTE + ", and everything else on it would be dropped "
+                    + "without a trace — the marker's own tag never reaches the rendered output. "
+                    + (isPrefixedName
+                            ? "Spell the slot name unprefixed: " + MARKER_NAME_ATTRIBUTE + "=\"…\"."
+                            : "Put it on a wrapping element instead, or on a <th:block> around the "
+                                    + "marker if there is no element to carry it."));
+        }
     }
 
     /**
@@ -719,7 +763,7 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
 
     /**
      * Rejects any {@code c:}-prefixed attribute on a component's call-site tag. {@code c:} is reserved for
-     * the dialect's own grammar ({@code c:slot}, {@code c:name}, {@code c:rest}) — never a channel for
+     * the dialect's own grammar ({@code c:slot}, {@code c:rest}) — never a channel for
      * props, declared or not. A prop is set with a plain attribute, or {@code th:} for an expression.
      */
     private void rejectDialectPrefixedAttribute(String plainAttributeName, StandardAttributes textAttrs,
@@ -728,7 +772,7 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
         throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME + ": "
                 + dialectPrefix + ":" + plainAttributeName + " was used on <" + dialectPrefix + ":"
                 + descriptor.tagName() + ">. " + dialectPrefix + ": is reserved for the dialect's own grammar ("
-                + dialectPrefix + ":slot, " + dialectPrefix + ":name, " + dialectPrefix + ":rest) — declare props "
+                + dialectPrefix + ":slot, " + dialectPrefix + ":rest) — declare props "
                 + "on the component and pass them with a plain attribute or " + standardPrefix + ":"
                 + plainAttributeName + " instead.");
     }

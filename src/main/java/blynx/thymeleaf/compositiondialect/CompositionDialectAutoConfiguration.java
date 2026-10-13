@@ -9,7 +9,6 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.thymeleaf.ThymeleafAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.thymeleaf.TemplateEngine;
@@ -35,7 +34,15 @@ import org.thymeleaf.TemplateEngine;
  * ship a {@code META-INF/thymeleaf-composition/source.properties} classpath descriptor instead; this
  * auto-configuration discovers those too, see {@link ComponentSource#discoverFromClasspath()}.
  */
-@AutoConfiguration(after = ThymeleafAutoConfiguration.class)
+@AutoConfiguration(afterName = {
+        // Both names, because Spring Boot 4 moved Thymeleaf's auto-configuration to its own module and
+        // package. Named as strings rather than referenced as classes: whichever one is on the classpath
+        // matches and the other is ignored, while a Class reference to the absent one makes introspecting
+        // this annotation throw a TypeNotPresentException on every startup — the ordering silently lost
+        // and a stack trace logged for it.
+        "org.springframework.boot.autoconfigure.thymeleaf.ThymeleafAutoConfiguration",
+        "org.springframework.boot.thymeleaf.autoconfigure.ThymeleafAutoConfiguration"
+})
 @EnableConfigurationProperties(CompositionDialectProperties.class)
 public class CompositionDialectAutoConfiguration {
 

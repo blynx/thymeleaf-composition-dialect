@@ -10,7 +10,7 @@ string, and a `th:`-prefixed one is evaluated as an expression:
 <c:button th:variant="${currentVariant}" /> <!-- variant = value of currentVariant -->
 ```
 
-`c:` is reserved for the dialect's own grammar — `c:slot`, `c:name`, `c:rest`.
+`c:` is reserved for the dialect's own grammar — `c:slot`, `c:rest`.
 
 `title` and `th:title` name the same prop (assuming `title` is declared) and writing both on one tag leaves the last one in source order winning.
 

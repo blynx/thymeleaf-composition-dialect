@@ -23,7 +23,7 @@ applies to a named slot and to the default slot alike:
 ```html
 <!-- card.html -->
 <div class="card">
-    <header><c:slot c:name="header">Untitled</c:slot></header>
+    <header><c:slot name="header">Untitled</c:slot></header>
     <main><c:slot>Nothing here yet.</c:slot></main>
 </div>
 ```
@@ -54,8 +54,8 @@ full, sensible default, and a caller can override one piece of it without reprod
 ```html
 <!-- data-table.html -->
 <tbody>
-    <c:slot c:name="rows">
-        <tr><td><c:slot c:name="empty-message">No data available.</c:slot></td></tr>
+    <c:slot name="rows">
+        <tr><td><c:slot name="empty-message">No data available.</c:slot></td></tr>
     </c:slot>
 </tbody>
 ```
@@ -92,15 +92,15 @@ dialect's own precedence resolves it.
 
 ## Named slots
 
-Add `c:name` to `<c:slot />` to define named slots. At the call site, assign content to a named slot with the
+Add `name` to `<c:slot />` to define named slots. At the call site, assign content to a named slot with the
 `c:slot` attribute on a direct child element:
 
 ```html
 <!-- card.html -->
 <div class="card">
-    <header th:if="${this.hasSlot('header')}"><c:slot c:name="header" /></header>
+    <header th:if="${this.hasSlot('header')}"><c:slot name="header" /></header>
     <main><c:slot /></main>
-    <footer th:if="${this.hasSlot('footer')}"><c:slot c:name="footer" /></footer>
+    <footer th:if="${this.hasSlot('footer')}"><c:slot name="footer" /></footer>
 </div>
 ```
 
@@ -126,8 +126,29 @@ actually has:
 
 The same applies to a body given to a component with no default slot at all.
 
-A marker under a `th:if` still counts as declared, so a component can decide per render whether to render a
-slot it declares — that is what [`hasSlot()`](#hasslot) is for.
+A marker inside a conditional branch still counts as declared, so a component can decide per render
+whether to render a slot it declares — that is what [`hasSlot()`](#hasslot) is for.
+
+## What a marker may carry
+
+`name` is the only attribute a `<c:slot />` may carry. Anything else on it is an error, naming the
+attribute and the component's template it was written in.
+
+This matters most for control flow: a `th:if` on the marker itself does not gate the slot. Put it on the
+element around the marker, or on a `<th:block>` when there is no element to put it on:
+
+```html
+<!-- no: an attribute other than name is an error -->
+<c:slot name="footer" th:if="${this.hasSlot('footer')}" />
+
+<!-- yes: on the element around it -->
+<footer th:if="${this.hasSlot('footer')}"><c:slot name="footer" /></footer>
+
+<!-- yes: on a th:block, where there is no element to carry it -->
+<th:block th:if="${this.hasSlot('footer')}"><c:slot name="footer" /></th:block>
+```
+
+Unlike a native `<slot>`, the marker is not part of the rendered page: it is gone from the output.
 
 ## The same slot in more than one branch
 

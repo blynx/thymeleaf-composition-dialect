@@ -39,6 +39,7 @@ See [Setup](docs/reference/setup.md) for all configuration options.
 
 ## Documentation
 
+- [Changelog](changelog.md)
 - [Setup](docs/reference/setup.md) — standalone and Spring Boot configuration, components from several sources
 - [Components](docs/reference/components.md) — components as records or classes, templates, naming
 - [Slots](docs/reference/slots.md) — default and named slots

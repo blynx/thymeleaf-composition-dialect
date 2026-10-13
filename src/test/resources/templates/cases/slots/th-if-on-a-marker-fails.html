@@ -1,0 +1,8 @@
+<!--
+  CASE      A marker's own tag is stripped while the component's fragment is parsed and never reaches the
+            engine, so a th:if written on it could only ever be dropped. Silently gating nothing is the
+            worst outcome for the usual branch-per-marker shape: every marker of a name receives the
+            content, so an ungated second branch renders the caller's content a second time.
+  EXPECT    fails, naming the marker's template and pointing at th:block
+-->
+<c:gated-marker>given</c:gated-marker>

@@ -1,7 +1,7 @@
 <c:component impl="NestedSlotFallback"/>
 <div id="table" th:attr="data-has-detail=${this.hasSlot('empty-detail')}">
-    <c:slot c:name="rows">
-        <p id="empty-message"><c:slot c:name="empty-message">No data available.<span id="empty-detail"><c:slot c:name="empty-detail">Try adjusting your filters.</c:slot></span></c:slot></p>
-        <p id="empty-icon"><c:slot c:name="empty-icon">(icon)</c:slot></p>
+    <c:slot name="rows">
+        <p id="empty-message"><c:slot name="empty-message">No data available.<span id="empty-detail"><c:slot name="empty-detail">Try adjusting your filters.</c:slot></span></c:slot></p>
+        <p id="empty-icon"><c:slot name="empty-icon">(icon)</c:slot></p>
     </c:slot>
 </div>

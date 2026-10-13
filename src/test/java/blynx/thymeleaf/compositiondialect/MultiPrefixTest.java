@@ -33,10 +33,11 @@ import org.thymeleaf.templateresolver.StringTemplateResolver;
  *       dialects push onto <em>one</em> stack. That is not an oversight: it is what makes nesting across
  *       the boundary come out right, because {@code c:_caller} and {@code x:_caller} unwind the same
  *       stack and content handed across it still reads its own writer. Per-dialect frames would break it.
- *   <li><em>Prefix-bound</em> — {@code c:slot}, {@code c:name} and the call-site {@code c:slot} attribute
- *       resolve under the prefix of the dialect that <em>registered the component</em>. A component
- *       template therefore belongs to its dialect's prefix, and the two mismatch tests at the bottom are
- *       what that costs.
+ *   <li><em>Prefix-bound</em> — the {@code c:slot} marker element and the call-site {@code c:slot}
+ *       attribute resolve under the prefix of the dialect that <em>registered the component</em>. A
+ *       component template therefore belongs to its dialect's prefix, and the two mismatch tests at the
+ *       bottom are what that costs. The marker's own {@code name} is not prefixed at all, so it reads
+ *       the same under either prefix — {@code prefixcomponents/box.html} spells {@code <x:slot name=…>}.
  * </ul>
  */
 class MultiPrefixTest {

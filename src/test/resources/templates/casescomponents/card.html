@@ -1,6 +1,6 @@
 <c:component impl="Card"/>
 <div id="card" th:attr="data-has-body=${this.hasSlot()}">
-    <header id="card-header"><c:slot c:name="header">Untitled</c:slot></header>
+    <header id="card-header"><c:slot name="header">Untitled</c:slot></header>
     <main id="card-body"><c:slot>Empty</c:slot></main>
-    <footer id="card-footer"><c:slot c:name="footer"></c:slot></footer>
+    <footer id="card-footer"><c:slot name="footer"></c:slot></footer>
 </div>

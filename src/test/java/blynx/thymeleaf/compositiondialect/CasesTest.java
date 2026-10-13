@@ -278,6 +278,41 @@ class CasesTest {
             assertTrue(message.contains("a default slot"), message);
             assertTrue(message.contains("slot \"tag\""), message);
         }
+
+        @Test
+        void thIfOnAMarkerFails() {
+            String message = failureOf("slots/th-if-on-a-marker-fails");
+
+            assertTrue(message.contains("th:if"), message);
+            assertTrue(message.contains("casescomponents/gated-marker.html"), message);
+            assertTrue(message.contains("th:block"), message);
+        }
+
+        @Test
+        void anAttributeOtherThanNameOnAMarkerFails() {
+            String message = failureOf("slots/an-attribute-other-than-name-on-a-marker-fails");
+
+            assertTrue(message.contains("class"), message);
+            assertTrue(message.contains("casescomponents/classy-marker.html"), message);
+        }
+
+        @Test
+        void aComputedSlotNameOnAMarkerFailsWithoutTheRenameHint() {
+            String message = failureOf("slots/a-computed-slot-name-on-a-marker-fails");
+
+            assertTrue(message.contains("th:name"), message);
+            assertTrue(message.contains("th:block"), message);
+            // The rename hint belongs to c:name alone: th:name is not a misspelling of it.
+            assertFalse(message.contains("unprefixed"), message);
+        }
+
+        @Test
+        void aPrefixedNameOnAMarkerFailsPointingAtThePlainOne() {
+            String message = failureOf("slots/a-prefixed-name-on-a-marker-fails-pointing-at-the-plain-one");
+
+            assertTrue(message.contains("c:name"), message);
+            assertTrue(message.contains("unprefixed"), message);
+        }
     }
 
     @Nested

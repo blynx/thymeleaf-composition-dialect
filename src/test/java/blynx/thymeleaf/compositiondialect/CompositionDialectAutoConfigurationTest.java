@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -178,6 +179,26 @@ class CompositionDialectAutoConfigurationTest {
                         "thymeleaf.composition.templates-path=" + APP_PATH,
                         "thymeleaf.composition.default-package=" + APP_PACKAGE)
                 .run(context -> assertNull(context.getStartupFailure()));
+    }
+
+    /**
+     * Spring Boot 4 moved Thymeleaf's own auto-configuration to a different package, so the class this one
+     * orders itself after has two names and only one of them is ever on the classpath. Naming them as
+     * strings is what tolerates that: a {@code Class} reference to the absent one makes Spring's
+     * introspection of this annotation throw a {@code TypeNotPresentException} on every startup — logged,
+     * not fatal, with the ordering silently dropped. Nothing else in the suite would notice that, since
+     * every test here runs against whichever single Boot version is on the test classpath.
+     */
+    @Test
+    void theThymeleafOrderingNamesBothBootPackagesAndReferencesNeitherAsAClass() {
+        AutoConfiguration annotation =
+                CompositionDialectAutoConfiguration.class.getAnnotation(AutoConfiguration.class);
+
+        assertEquals(0, annotation.after().length, "a Class reference cannot survive the package move");
+        assertEquals(
+                List.of("org.springframework.boot.autoconfigure.thymeleaf.ThymeleafAutoConfiguration",
+                        "org.springframework.boot.thymeleaf.autoconfigure.ThymeleafAutoConfiguration"),
+                List.of(annotation.afterName()));
     }
 
     private static Throwable rootCauseOf(Throwable thrown) {
