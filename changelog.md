@@ -3,6 +3,35 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). This library is pre-1.0 and
 still drafting, so breaking changes appear in minor versions.
 
+## 0.20.0
+
+### Changed
+
+- Component templates are found with [ClassGraph](https://github.com/classgraph/classgraph) instead of
+  Reflections. ClassGraph has no dependencies of its own, so the four jars that came along before
+  (Reflections, javassist, jsr305, slf4j-api 1.7) become one. It also asks the class loader where the
+  class path is rather than reading `java.class.path`, and knows the loaders of Spring Boot's launcher,
+  servlet containers and application servers — under which `java.class.path` says nothing about the
+  application. The application still supplies Thymeleaf itself, as before.
+- The library is compiled for Java 21 rather than 25. It is built with 25, but a consumer on 21 could not
+  resolve it before.
+
+### Fixed
+
+- A component's `impl` class, and a `<c:prop type="…">` class, are resolved through the thread's context
+  class loader. Under Spring Boot DevTools the application's own classes are only reachable that way, so
+  every class-bound component failed to resolve when run with `spring-boot:run` or an IDE's DevTools run
+  configuration, while `java -jar` worked.
+- A component library imported into a Spring Boot application packaged as a fat jar is now found. Its
+  templates sit in a jar nested inside the application's jar, which discovery never looked into before,
+  so the library's source came up empty and startup failed. The same applies to an application extracted
+  with `jarmode=tools`, and to libraries a jar names in its `Class-Path` manifest attribute.
+
+### Added
+
+- Sources and javadoc jars are published alongside the library, so an IDE can step into the real source.
+- The POM now carries the library's name, description, licence and repository.
+
 ## 0.19.0
 
 ### Changed — breaking

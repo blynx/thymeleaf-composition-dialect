@@ -47,6 +47,14 @@ implement.
 - **Docs rewritten to be user-facing only, no implementation rationale, simple-to-complex.**
 - **`components.md` restructured classless-first, building up to class-bound.** Mirrors the actual learning
   curve — you don't need Java at all for the simplest component.
+- **Reflections replaced by ClassGraph for finding templates on the class path (`ClasspathTemplates`).**
+  Reflections was unmaintained, brought four jars along for one resource enumeration, and could not see a
+  component library nested inside a Boot fat jar — measured before the swap, not assumed. A JDK-only walk
+  of `java.class.path` was written first and proved equivalent on every Boot shape (fat jar, extracted,
+  manifest `Class-Path`), but `java.class.path` is the container's own bootstrap under a servlet container
+  or application server, so it finds nothing there; unknown app servers were judged unlikely but plausible
+  consumers. ClassGraph resolves roots from the class loader and carries handlers for those. Zero
+  dependencies of its own, ~600 KB. Both implementations ran against the same fixtures before choosing.
 - **`AnonymousComponent`'s constructor seeds `hasSlot`/`restAttributes` as synthetic map entries,
   computed eagerly.** Closes the bare-property-access bug (see Implementation details) without a custom
   OGNL/SpEL `PropertyAccessor`; a real declared prop of the same name still wins, merged in afterwards.
@@ -69,10 +77,12 @@ implement.
 ## Implementation details
 
 - **`ClasspathHelper.forClassLoader()` silently returns zero URLs on a modern JDK.** Fixed by scanning
-  `ClasspathHelper.forJavaClassPath()` (the `java.class.path` system property) instead.
+  `ClasspathHelper.forJavaClassPath()` (the `java.class.path` system property) instead. *(Reflections has
+  since been replaced by ClassGraph, which solves exactly this: per-loader handlers instead of a
+  `URLClassLoader` assumption.)*
 - **Reflections' `Scanners.Resources` indexes by bare file name, not full path.** Filtering by directory
   segment has to happen against the full resource path returned separately, not through the scanner's own
-  pattern argument.
+  pattern argument. *(Moot since Reflections was replaced.)*
 - **A physical `templates/` prefix baked into test resource layout never needs to be known by
   `ComponentSource`.** Matching resource paths by suffix pattern (`.../templatesPath/.../basename.html`)
   transparently absorbs whatever prefix a `ClassLoaderTemplateResolver` happens to be configured with.

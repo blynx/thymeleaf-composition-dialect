@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'blynx.thymeleaf'
-version = '0.19.0'
+version = '0.20.0'
 
 repositories {
     mavenCentral()
@@ -15,11 +15,10 @@ def thymeleafVersion = '3.1.5.RELEASE'
 def springBootVersion = '3.5.0'
 
 dependencies {
-    implementation 'org.reflections:reflections:0.10.2'
+    // Finds component templates across class loaders (Boot launcher, servlet containers). No transitive deps.
+    implementation 'io.github.classgraph:classgraph:4.8.195'
 
-    // Provided, not transitive: this plugs into the application's own template engine, so the application
-    // decides the Thymeleaf version. Pulling one along would let a component library drag a conflicting
-    // Thymeleaf into an application that already has its own.
+    // Provided by the application, which decides the Thymeleaf and Spring versions.
     compileOnly "org.thymeleaf:thymeleaf:$thymeleafVersion"
     compileOnly "org.springframework.boot:spring-boot-autoconfigure:$springBootVersion"
 
@@ -27,10 +26,7 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.14.4'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
-    // The auto-configuration is compiled against Spring but would otherwise never be run. Property names
-    // are matched by relaxed binding at runtime, so a wrong one fails silently at startup rather than at
-    // compile time — ApplicationContextRunner is what turns that into a test failure. AssertJ comes with
-    // spring-boot-test's AssertableApplicationContext; assertions here stay JUnit's, as elsewhere.
+    // ApplicationContextRunner for the auto-configuration; it needs AssertJ on the class path.
     testImplementation "org.springframework.boot:spring-boot-autoconfigure:$springBootVersion"
     testImplementation "org.springframework.boot:spring-boot-test:$springBootVersion"
     testImplementation 'org.assertj:assertj-core:3.27.6'
@@ -40,6 +36,21 @@ java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
     }
+    withSourcesJar()
+    withJavadocJar()
+}
+
+// Built with 25, published for 21 (Boot 3 and 4 need 17). Also sets org.gradle.jvm.version in the metadata.
+tasks.withType(JavaCompile).configureEach {
+    options.release = 21
+}
+
+tasks.named('javadoc') {
+    // English regardless of the build machine; -locale alone leaves the doclet's own strings localised.
+    options.locale = 'en'
+    options.jFlags('-Duser.language=en', '-Duser.country=US')
+    // Undocumented members are deliberate here; everything else doclint checks stays on.
+    options.addStringOption('Xdoclint:all,-missing', '-quiet')
 }
 
 tasks.named('test') {
@@ -50,6 +61,24 @@ publishing {
     publications {
         maven(MavenPublication) {
             from components.java
+            pom {
+                name = 'Thymeleaf Composition Dialect'
+                description = 'A UI component templating style for Thymeleaf. Requires Thymeleaf 3.1+, ' +
+                        'supplied by the consuming application rather than pulled in here; Spring Boot ' +
+                        'auto-configuration is picked up when present and is optional.'
+                url = 'https://github.com/blynx/thymeleaf-composition-dialect'
+                licenses {
+                    license {
+                        name = 'Apache License, Version 2.0'
+                        url = 'https://www.apache.org/licenses/LICENSE-2.0'
+                    }
+                }
+                scm {
+                    url = 'https://github.com/blynx/thymeleaf-composition-dialect'
+                    connection = 'scm:git:https://github.com/blynx/thymeleaf-composition-dialect.git'
+                    developerConnection = 'scm:git:git@github.com:blynx/thymeleaf-composition-dialect.git'
+                }
+            }
         }
     }
 }

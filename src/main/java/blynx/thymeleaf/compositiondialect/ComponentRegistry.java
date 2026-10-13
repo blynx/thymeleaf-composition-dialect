@@ -1,9 +1,11 @@
 package blynx.thymeleaf.compositiondialect;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.RecordComponent;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -16,14 +18,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import org.reflections.Reflections;
-import org.reflections.scanners.Scanners;
-import org.reflections.util.ClasspathHelper;
-import org.reflections.util.ConfigurationBuilder;
 import org.thymeleaf.IEngineConfiguration;
 import org.thymeleaf.templateresolver.ITemplateResolver;
 import org.thymeleaf.templateresolver.TemplateResolution;
@@ -63,8 +62,6 @@ public final class ComponentRegistry {
             "double", double.class,
             "boolean", boolean.class);
 
-    private static final Pattern HTML_RESOURCE = Pattern.compile(".*\\.html$");
-
     private final List<ComponentDescriptor> components;
     private final Map<String, List<ComponentDescriptor>> byPrefix;
     private final Map<String, List<ComponentDescriptor>> byTagName;
@@ -91,7 +88,7 @@ public final class ComponentRegistry {
      * declaration is skipped — it is just a template, not a component.
      */
     public static ComponentRegistry scan(ComponentSource source, String prefix) {
-        return scan(source, prefix, findHtmlResources());
+        return scan(List.of(source), prefix);
     }
 
     /**
@@ -102,19 +99,50 @@ public final class ComponentRegistry {
      */
     public static ComponentRegistry scan(Collection<ComponentSource> sources, String prefix) {
         requireNoDuplicateNamespaces(sources);
-        // One classpath walk shared across every source, rather than one per source.
-        Set<String> htmlResources = findHtmlResources();
+        // One class path walk shared across every source, rather than one per source.
+        return scan(sources, prefix, ClasspathTemplates.onRuntimeClasspath(underAnyRoot(sources)));
+    }
+
+    /**
+     * {@link #scan(Collection, String)} against specific class path roots — directories or jar files —
+     * rather than the JVM's own, so a test can lay out a jar, a Boot fat jar or an extracted one and
+     * check what discovery makes of it.
+     */
+    static ComponentRegistry scan(Collection<ComponentSource> sources, String prefix, List<Path> roots) {
+        requireNoDuplicateNamespaces(sources);
+        return scan(sources, prefix, ClasspathTemplates.under(roots, underAnyRoot(sources)));
+    }
+
+    private static ComponentRegistry scan(Collection<ComponentSource> sources, String prefix,
+                                          Map<String, byte[]> htmlResources) {
         return aggregate(sources.stream().map(source -> scan(source, prefix, htmlResources)).toList());
     }
 
-    private static ComponentRegistry scan(ComponentSource source, String prefix, Set<String> htmlResources) {
-        ComponentDeclarationReader reader = new ComponentDeclarationReader(prefix);
-        Pattern underRoot = Pattern.compile(
+    /**
+     * Whether a resource path sits under {@code source.templatesPath()} — whatever precedes that segment
+     * ({@code templates/}, {@code BOOT-INF/classes/templates/}, nothing) is the resolver's business, not
+     * this walk's. Group 1 is the sub-path below the root, group 2 the basename that becomes the tag name.
+     */
+    private static Pattern underRoot(ComponentSource source) {
+        return Pattern.compile(
                 "(?:^|.*/)" + Pattern.quote(source.templatesPath()) + "/((?:.*/)?)([^/]+)\\.html$");
+    }
+
+    /** Only resources under one of the sources' roots are worth reading off the class path at all. */
+    private static Predicate<String> underAnyRoot(Collection<ComponentSource> sources) {
+        return sources.stream()
+                .map(source -> underRoot(source).asMatchPredicate())
+                .reduce(Predicate::or)
+                .orElse(path -> false);
+    }
+
+    private static ComponentRegistry scan(ComponentSource source, String prefix, Map<String, byte[]> htmlResources) {
+        ComponentDeclarationReader reader = new ComponentDeclarationReader(prefix);
+        Pattern underRoot = underRoot(source);
 
         List<ComponentDescriptor> descriptors = new ArrayList<>();
-        for (String resource : htmlResources) {
-            Matcher matcher = underRoot.matcher(resource);
+        for (Map.Entry<String, byte[]> resource : htmlResources.entrySet()) {
+            Matcher matcher = underRoot.matcher(resource.getKey());
             if (!matcher.matches()) {
                 continue;
             }
@@ -123,7 +151,8 @@ public final class ComponentRegistry {
             String templatePath = source.templatesPath() + "/" + subPath + tagName;
             String describeForErrors = templatePath + ".html";
 
-            ComponentDeclarationReader.Declaration declaration = readDeclaration(reader, resource, describeForErrors);
+            ComponentDeclarationReader.Declaration declaration =
+                    readDeclaration(reader, resource.getValue(), describeForErrors);
             if (declaration == null) {
                 continue;
             }
@@ -172,12 +201,8 @@ public final class ComponentRegistry {
     }
 
     private static ComponentDeclarationReader.Declaration readDeclaration(
-            ComponentDeclarationReader reader, String resource, String describeForErrors) {
-        try (InputStream in = openResource(resource)) {
-            if (in == null) {
-                throw new IllegalStateException(CompositionDialect.DIALECT_NAME
-                        + ": found " + resource + " while walking the classpath, but could not open it");
-            }
+            ComponentDeclarationReader reader, byte[] resource, String describeForErrors) {
+        try (InputStream in = new ByteArrayInputStream(resource)) {
             return reader.read(in, describeForErrors);
         } catch (IOException e) {
             throw new IllegalStateException(CompositionDialect.DIALECT_NAME
@@ -270,31 +295,19 @@ public final class ComponentRegistry {
         return componentClass;
     }
 
+    /**
+     * Through the context class loader, as {@link ComponentSource#discoverFromClasspath()} already does:
+     * under Spring Boot DevTools the application's classes live in a child loader this dialect's own
+     * cannot see.
+     */
     private static Class<?> tryLoad(String fqcn) {
+        ClassLoader context = Thread.currentThread().getContextClassLoader();
+        ClassLoader loader = context != null ? context : ComponentRegistry.class.getClassLoader();
         try {
-            return Class.forName(fqcn);
+            return Class.forName(fqcn, true, loader);
         } catch (ClassNotFoundException e) {
             return null;
         }
-    }
-
-    /**
-     * Every {@code *.html} resource on the classpath, keyed by its full resource path (e.g.
-     * {@code templates/casescomponents/panel.html}) exactly as {@code ClassLoader.getResourceAsStream}
-     * needs it. Scoped by {@code java.class.path} rather than {@link ClasspathHelper#forClassLoader()}: the
-     * latter only sees {@code URLClassLoader}s, which the JVM does not guarantee (and Gradle's own test
-     * worker does not use), so it silently returns nothing on a modern JDK.
-     */
-    private static Set<String> findHtmlResources() {
-        Reflections reflections = new Reflections(new ConfigurationBuilder()
-                .setUrls(ClasspathHelper.forJavaClassPath())
-                .setScanners(Scanners.Resources));
-        return reflections.getResources(HTML_RESOURCE);
-    }
-
-    private static InputStream openResource(String resource) {
-        ClassLoader loader = Thread.currentThread().getContextClassLoader();
-        return (loader != null ? loader : ComponentRegistry.class.getClassLoader()).getResourceAsStream(resource);
     }
 
     /** Convenience for the single-source case. */
