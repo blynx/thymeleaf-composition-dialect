@@ -76,7 +76,7 @@ class AnonymousComponentOgnlAccessTest {
     @Test
     void bareRestAttributesIsIndexable() {
         CompositionComponentContext withRest = new CompositionComponentContext(
-                new ComponentAttributes(Map.of("title", "mine", "data-kept", "a"), Set.of("title")),
+                new ComponentAttributes(Map.of("title", "mine", "data-kept", "a"), Set.of("title"), Map.of()),
                 Set.of(),
                 Locale.ROOT,
                 (code, params) -> code,
@@ -102,7 +102,7 @@ class AnonymousComponentOgnlAccessTest {
 
     private static CompositionComponentContext slots(String... slotNames) {
         return new CompositionComponentContext(
-                new ComponentAttributes(Map.of(), Set.of()),
+                new ComponentAttributes(Map.of(), Set.of(), Map.of()),
                 Set.of(slotNames),
                 Locale.ROOT,
                 (code, params) -> code,

@@ -10,77 +10,20 @@ string, and a `th:`-prefixed one is evaluated as an expression:
 <c:button th:variant="${currentVariant}" /> <!-- variant = value of currentVariant -->
 ```
 
-Either way, the result becomes a prop if the component declares that name, or otherwise reaches
-`restAttributes`/`c:rest` (see [below](#rest-attributes)):
+`c:` is reserved for the dialect's own grammar — `c:slot`, `c:name`, `c:rest`.
 
-```html
-<c:button th:tabindex="${idx}" /> <!-- "tabindex" is not a declared prop, so it reaches c:rest -->
-```
+`title` and `th:title` name the same prop (assuming `title` is declared) and writing both on one tag leaves the last one in source order winning.
 
-`c:` is reserved for the dialect's own grammar — `c:slot`, `c:name`, `c:rest` — and cannot be used to pass a
-prop; a `c:`-prefixed attribute on a component tag always fails. Use a plain attribute, or `th:` for an
-expression.
+## Attributes in classes
 
-Note that the prefix is *dropped* on a declared prop: `title` and `th:title` name the same prop (assuming
-`title` is declared), and writing both on one tag leaves the last one in source order winning.
+For record classes, an attribute the caller omits binds to `null` for a reference-typed component — `String`, 
+a boxed number, an enum — or to `0`/`false` for a primitive `int`, `long`, `double` or `boolean`. Handle the `null` 
+in a compact constructor; a primitive component already has a value to work with.
 
-### Standard attributes a component tag cannot carry
+In a plain java class, read attributes in the constructor with `context.attributes().get("key")`.  
+A plain java class gets no automatic coercion.
 
-These `th:` attributes cannot be used on a component tag and are rejected rather than silently turned into
-a prop:
-
-`th:attr`, `th:attrappend`, `th:attrprepend`, `th:with`, `th:object`, `th:classappend`, `th:styleappend`,
-`th:alt-title`, `th:lang-xmllang`, `th:fragment`, `th:remove`, `th:inline`, `th:assert`, `th:ref`,
-`th:field`, `th:errors`, `th:errorclass`
-
-Put them on an element inside the component's own template instead, or declare the value as a prop and pass
-it with `th:`, letting the template apply it.
-
-Control flow (`th:if`, `th:unless`, `th:each`, `th:switch`, `th:case`) is unaffected — it still decides
-whether and how often the component renders. See [Components](components.md).
-
-In a record, each component other than `context` binds automatically from the attribute of the same name,
-kebab-cased, and is coerced to its declared type — `String`, `boolean`/`Boolean`, `int`/`Integer`,
-`long`/`Long`, `double`/`Double`, or an enum constant:
-
-```java
-public record Button(String variant, CompositionComponentContext context) implements CompositionComponent {
-    public Button {
-        variant = variant != null ? variant : "primary";
-    }
-}
-```
-
-An attribute the caller omits binds to `null` for a reference-typed component, or to the type's zero value
-for a primitive one (`0`, `false`, and so on). Handle `null` in a compact constructor, as above. A primitive
-component defaults to zero or false on its own; a boxed or enum component needs an explicit default.
-
-A value that is already the declared type passes through with no coercion at all — for example, a
-`th:`-prefixed expression that evaluates directly to an `Enum` constant, or a prop typed `Object`, which
-accepts anything.
-
-If a plain attribute cannot be read as the declared type — `auto-hide-seconds="soon"` for an `int` prop, say
-— construction fails. The error names the component, the attribute, the value given, and the type expected.
-
-In a class, read attributes in the constructor with `context.attributes().get("key")`:
-
-```java
-public class Button extends AbstractCompositionComponent {
-    private final String variant;
-
-    public Button(CompositionComponentContext context) {
-        super(context);
-        Object raw = context.attributes().get("variant");
-        this.variant = raw != null ? raw.toString() : "primary";
-    }
-
-    public String getVariant() {
-        return variant;
-    }
-}
-```
-
-A class gets no automatic coercion. Read the raw value and convert it yourself.
+See [Writing the class](components.md#writing-the-class) for the shape of each.
 
 ## Declaring props
 
@@ -91,87 +34,15 @@ they are excluded from `restAttributes`/`c:rest`. How, depends on the component:
   `CompositionComponentContext`. `variant` above is a prop with no declaration needed at all. Override the
   attribute name a component binds from — when the kebab-cased derivation does not fit — with `@Prop`:
   `@Prop("data-variant") String variant`.
-- **A class declares props by annotating fields with `@Prop`:**
-
-  ```java
-  @Prop private final String variant;
-  ```
-
+- **A class declares props by annotating fields with `@Prop`:** `@Prop private final String variant;`
   A field's attribute name defaults to its own name, kebab-cased. `@Prop("...")` overrides it, the same as
   on a record component.
 
 Either way, declaring a prop is what excludes it, not reading it. A component can read an attribute to
 validate, log, or derive from it without declaring it. That attribute still flows through to `c:rest`, like
-any attribute the component never touches:
-
-```java
-// "type" is read here only to validate it — not declared as a prop, so it still
-// reaches c:rest, exactly like an attribute the component never touches at all.
-Object rawType = context.attributes().get("type");
-if (rawType != null && !Set.of("button", "submit", "reset").contains(rawType.toString())) {
-    throw new IllegalArgumentException("unknown button type: " + rawType);
-}
-```
-
-This works the same whether `type` is written plain or with `th:` — either way, reading it in the
-constructor does not exclude it from `restAttributes`/`c:rest`.
-
-## Attribute defaults
-
-**Default in the component, declared as a prop and applied explicitly:**
-
-Declare the attribute as a prop, so `restAttributes` excludes it. If the template needs the value itself —
-building a CSS class, say — apply an explicit fallback. Use the constructor for a class, or a compact
-constructor for a record.
-
-```java
-@Prop private final String variant;
-// ...
-Object raw = context.attributes().get("variant");
-this.variant = raw != null ? raw.toString() : "primary";
-```
-
-```html
-<button th:classappend="${'btn-' + this.variant}" c:rest>
-```
-
-**Default in the template, overridable by the caller:**
-
-For raw HTML attributes where you want a sensible default, but the caller should be able to override it, put
-the default as a static attribute in the template. Do not declare it as a prop. `c:rest` overrides a static
-attribute when the caller passes the same key:
-
-```html
-<button type="button" c:rest>
-    <c:slot />
-</button>
-```
-
-```html
-<c:button>Submit</c:button>               <!-- renders: <button type="button">Submit</button> -->
-<c:button type="submit">Submit</c:button> <!-- renders: <button type="submit">Submit</button> -->
-```
+any attribute the component never touches.
 
 ## Rest attributes
-
-`restAttributes` exposes every attribute the caller passed that is not a declared prop, as a map:
-
-```java
-public class Button extends AbstractCompositionComponent {
-    @Prop private final String variant;
-
-    public Button(CompositionComponentContext context) {
-        super(context);
-        Object raw = context.attributes().get("variant");
-        this.variant = raw != null ? raw.toString() : "primary";
-        // variant is a declared prop — type, disabled, and anything else the caller passes are not
-    }
-
-    public String getVariant() {
-        return variant;
-    }
-}
-```
 
 ### `c:rest` — spread onto an element
 
@@ -180,6 +51,7 @@ onto that element:
 
 ```html
 <!-- button.html -->
+<c:component props="variant"/>
 <button th:classappend="${'btn-' + this.variant}" c:rest>
     <c:slot />
 </button>
@@ -207,19 +79,26 @@ spread and it is an error — the same as a misplaced [`c:slot`](slots.md#fallba
 <div th:each="attr : ${this.restAttributes}" th:attr="${attr.key}=${attr.value}">
 ```
 
-```java
-// access in the class
-Map<String, Object> dataAttrs = new HashMap<>();
-restAttributes().forEach((key, value) -> {
-    if (key.startsWith("data-")) {
-        dataAttrs.put(key, value);
-    }
-});
-```
+## Standard Thymeleaf attributes
 
-`c:rest` is syntactic sugar over `restAttributes`. It spreads the map onto the element and merges it with any
-static attributes already present. The caller wins on conflict.
+### ... a component tag CANNOT carry
 
-`th:text`/`th:utext` on the component tag are the one exception. The dialect never treats them as a plain or
-`c:`-prefixed attribute, so they never appear in `restAttributes` either. See
-[Slots](slots.md#thtextthutext-shorthand) — they fill the default slot instead.
+These thymeleaf built-in `th:` attributes cannot be used on a `c:` component tag and are rejected rather than silently
+turned into a prop:
+
+`th:attr`, `th:attrappend`, `th:attrprepend`, `th:with`, `th:object`,
+`th:alt-title`, `th:lang-xmllang`, `th:fragment`, `th:remove`, `th:inline`, `th:assert`, `th:ref`,
+`th:field`, `th:errors`, `th:errorclass`
+
+They are legal in a component template though.
+
+### ... a component CAN carry
+
+These attributes cannot be used in `c:rest`.
+
+`th:classappend`/`th:styleappend` are allowed. They will append into the respective declared attributes in the component template.
+
+`th:if`, `th:unless`, `th:each`, `th:switch`, `th:case`, control flow is unaffected. It still decides
+whether and how often the component renders. See [Components](components.md).  
+
+`th:text`/`th:utext` overwrite the default slot, see also: [Slots](slots.md#thtextthutext-shorthand).

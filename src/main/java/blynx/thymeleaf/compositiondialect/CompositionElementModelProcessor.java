@@ -99,6 +99,10 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
     // used at render time only to recognize and strip the declaration; the registry already resolved it.
     private volatile ElementName componentElementName = null;
 
+    // Interned c:rest attribute name, resolved and cached the same way as slotAttributeName above — used
+    // only to answer "does this template put c:rest anywhere", once per template load.
+    private volatile AttributeName restAttributeName = null;
+
     // The standard dialect's prefix is configurable, so th:text/th:utext can only be resolved once we
     // have an IEngineConfiguration in hand; cached the same way as slotAttributeName above.
     private volatile StandardAttributes standardTextAttributes = null;
@@ -142,7 +146,7 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
      */
     private record CachedFragment(ComponentDescriptor descriptor, FragmentInfo info,
                                   Function<CompositionComponentContext, CompositionComponent> componentFactory,
-                                  ICacheEntryValidity validity) {
+                                  ICacheEntryValidity validity, boolean hasRest) {
     }
 
     /** The standard dialect's prefix and the names of its own that this processor handles specially. */
@@ -233,10 +237,15 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
         // After the blank-default removal and the th:text shorthand above, so that indentation-only bodies
         // stay exempt and th:text is checked like the slot content it becomes.
         requireOnlyDeclaredSlots(slots.keySet(), fragment, descriptor);
-        Map<String, Object> attrs = extractAttrs(rootElement, context, textAttrs, descriptor);
+        ExtractedAttrs extracted = extractAttrs(rootElement, context, textAttrs, descriptor);
+        Map<String, Object> attrs = extracted.attrs();
+        Map<String, String> appends = extracted.appends();
+        if (!appends.isEmpty() && !cached.hasRest()) {
+            requireRestForAppends(appends, textAttrs, descriptor);
+        }
 
         CompositionComponentContext componentContext = new CompositionComponentContext(
-                new ComponentAttributes(attrs, descriptor.props()),
+                new ComponentAttributes(attrs, descriptor.props(), appends),
                 slots.keySet(),
                 context.getLocale(),
                 (code, params) -> context.getMessage(CompositionElementModelProcessor.class, code, params, false),
@@ -302,7 +311,8 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
         // Cache only cacheable templates and re-check validity per hit (dev-mode edits, TTL expiry).
         // Not flushed by TemplateEngine.clearTemplateCaches().
         ICacheEntryValidity validity = templateModel.getTemplateData().getValidity();
-        CachedFragment fresh = new CachedFragment(descriptor, info, componentFactory, validity);
+        boolean hasRest = hasRest(templateModel, context.getConfiguration());
+        CachedFragment fresh = new CachedFragment(descriptor, info, componentFactory, validity, hasRest);
         if (validity.isCacheable()) {
             // Plain put, not computeIfAbsent: the mapping function would hold a bin lock across a template
             // parse. A race duplicates this work harmlessly; both threads put the same equivalent entry.
@@ -648,7 +658,9 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
      *
      * <p>The ones listed here cannot: their value is not a single expression ({@code th:attr},
      * {@code th:with}, {@code th:remove}, {@code th:inline}, {@code th:fragment}), or it modifies rather
-     * than sets ({@code th:classappend}), or it scopes a subtree that no longer exists by the time a
+     * than sets and has no single fixed target attribute to modify ({@code th:attrappend},
+     * {@code th:attrprepend} — unlike {@code th:classappend}/{@code th:styleappend}, which merge instead;
+     * see {@link #APPEND_MERGE_TARGETS}), or it scopes a subtree that no longer exists by the time a
      * component has replaced its own tag ({@code th:object}), or it needs form binding this never sees
      * ({@code th:field}). Note that control flow is absent deliberately: {@code th:if}, {@code th:unless},
      * {@code th:each}, {@code th:switch} and {@code th:case} all run at lower precedences than
@@ -658,10 +670,20 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
     static final Set<String> UNSUPPORTED_STANDARD_ATTRIBUTES = Set.of(
             "attr", "attrappend", "attrprepend",
             "with", "object",
-            "classappend", "styleappend",
             "alt-title", "lang-xmllang",
             "fragment", "remove", "inline", "assert", "ref",
             "field", "errors", "errorclass");
+
+    /**
+     * {@code th:classappend}/{@code th:styleappend} on a component tag: unlike the attributes rejected
+     * above, these have one single, well-known target attribute, so — unlike {@code th:attrappend}/
+     * {@code th:attrprepend}, which could name any attribute and are rejected outright — they are captured
+     * here instead, evaluated in the caller's own scope, and merged by {@link CompositionRestAttributesTagProcessor}
+     * onto whichever element the component's template puts {@code c:rest} on.
+     */
+    static final Map<String, String> APPEND_MERGE_TARGETS = Map.of(
+            "classappend", "class",
+            "styleappend", "style");
 
     private void requireSupportedStandardAttribute(String plainAttributeName, StandardAttributes standard,
                                                     ComponentDescriptor descriptor) {
@@ -674,6 +696,25 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
                 + "before that attribute would run, so the only thing it could be is a prop — and its value "
                 + "is not one. Put it on an element inside " + descriptor.templatePath() + ".html instead, or pass a "
                 + "value with " + dialectPrefix + ": and let the component's template apply it.");
+    }
+
+    /**
+     * Rejects a caller's {@code th:classappend}/{@code th:styleappend} when the component's template has no
+     * {@code c:rest} anywhere for it to merge onto — rather than silently doing nothing, the same stance
+     * {@code c:rest} itself takes on misplacement (see {@link CompositionRestAttributesTagProcessor}).
+     */
+    private void requireRestForAppends(Map<String, String> appends, StandardAttributes standard,
+                                       ComponentDescriptor descriptor) {
+        String prefix = standard != null ? standard.prefix() : "th";
+        String names = APPEND_MERGE_TARGETS.entrySet().stream()
+                .filter(entry -> appends.containsKey(entry.getValue()))
+                .map(entry -> prefix + ":" + entry.getKey())
+                .collect(Collectors.joining("/"));
+        throw new TemplateProcessingException(CompositionDialect.DIALECT_NAME + ": "
+                + names + " was passed to <" + dialectPrefix + ":" + descriptor.tagName() + ">, but "
+                + descriptor.templatePath() + ".html has no " + dialectPrefix + ":rest for it to merge onto. "
+                + "Add " + dialectPrefix + ":rest to the element it should land on, inside "
+                + descriptor.templatePath() + ".html.");
     }
 
     /**
@@ -692,10 +733,16 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
                 + plainAttributeName + " instead.");
     }
 
-    private Map<String, Object> extractAttrs(IProcessableElementTag rootElement, ITemplateContext context,
-                                             StandardAttributes textAttrs, ComponentDescriptor descriptor) {
+    /** {@link #extractAttrs}'s two results: the ordinary prop/rest map, and the caller's evaluated
+     * {@code th:classappend}/{@code th:styleappend} contributions, keyed by target attribute name. */
+    private record ExtractedAttrs(Map<String, Object> attrs, Map<String, String> appends) {
+    }
+
+    private ExtractedAttrs extractAttrs(IProcessableElementTag rootElement, ITemplateContext context,
+                                        StandardAttributes textAttrs, ComponentDescriptor descriptor) {
         var allAttributes = rootElement.getAllAttributes();
         Map<String, Object> attrs = HashMap.newHashMap(allAttributes.length);
+        Map<String, String> appends = Map.of();
         // Resolved on the first standard-prefixed attribute rather than up front: most component tags carry
         // none at all, and then there is nothing here to parse an expression for.
         IStandardExpressionParser expressionParser = null;
@@ -711,6 +758,22 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
             if (dialectPrefix.equals(prefix)) {
                 rejectDialectPrefixedAttribute(plainAttributeName, textAttrs, descriptor);
             } else if (textAttrs != null && textAttrs.prefix().equals(prefix)) {
+                String mergeTarget = APPEND_MERGE_TARGETS.get(plainAttributeName);
+                if (mergeTarget != null) {
+                    if (attr.getValue() != null) {
+                        if (expressionParser == null) {
+                            expressionParser = StandardExpressions.getExpressionParser(context.getConfiguration());
+                        }
+                        Object result = expressionParser.parseExpression(context, attr.getValue()).execute(context);
+                        if (result != null && !result.toString().isEmpty()) {
+                            if (appends.isEmpty()) {
+                                appends = new HashMap<>();
+                            }
+                            appends.put(mergeTarget, result.toString());
+                        }
+                    }
+                    continue;
+                }
                 requireSupportedStandardAttribute(plainAttributeName, textAttrs, descriptor);
                 if (attr.getValue() == null) {
                     attrs.put(plainAttributeName, null);
@@ -725,7 +788,7 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
                 attrs.put(plainAttributeName, attr.getValue());
             }
         }
-        return attrs;
+        return new ExtractedAttrs(attrs, appends);
     }
 
     private AttributeName slotAttributeName(IEngineConfiguration configuration) {
@@ -759,6 +822,34 @@ public class CompositionElementModelProcessor extends AbstractProcessor implemen
             componentElementName = name;
         }
         return name;
+    }
+
+    private AttributeName restAttributeName(IEngineConfiguration configuration) {
+        AttributeName name = restAttributeName;
+        if (name == null) {
+            // Benign race, as with slotAttributeName above: every thread resolves the same interned instance.
+            name = configuration.getAttributeDefinitions()
+                    .forName(getTemplateMode(), dialectPrefix, "rest").getAttributeName();
+            restAttributeName = name;
+        }
+        return name;
+    }
+
+    /**
+     * Whether {@code c:rest} appears anywhere in {@code [1, templateModel.size() - 1)} — the same range
+     * {@link #parseFragment} works over. Computed once per template load so {@link #doProcess} can reject a
+     * caller's {@code th:classappend}/{@code th:styleappend} immediately when there is nowhere for it to
+     * land, rather than silently doing nothing: a flat scan is enough, since fallback content lives
+     * contiguously in this same range even though {@code parseFragment} recurses into it separately.
+     */
+    private boolean hasRest(TemplateModel templateModel, IEngineConfiguration configuration) {
+        AttributeName restName = restAttributeName(configuration);
+        for (int i = 1; i < templateModel.size() - 1; i++) {
+            if (templateModel.get(i) instanceof IProcessableElementTag tag && tag.hasAttribute(restName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

@@ -1,0 +1,9 @@
+<!--
+  CASE      button.html appends "btn-" + variant to its own class via th:classappend. th:classappend on the
+            <c:button> tag itself does not overwrite that — it merges with it, landing wherever button.html
+            puts c:rest. Order follows th:classappend's own convention of adding new material after what is
+            already there — the component's contribution first, the caller's appended one after, joined by
+            a single space.
+  EXPECT    class="btn-danger urgent"
+-->
+<c:button variant="danger" th:classappend="'urgent'">Delete</c:button>

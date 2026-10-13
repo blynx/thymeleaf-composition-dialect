@@ -14,6 +14,7 @@ public class ComponentAttributes {
 
     private final Map<String, Object> raw;
     private final Set<String> props;
+    private final Map<String, String> appends;
 
     /**
      * Computed on first ask and kept: both inputs are fixed for this occurrence, so every later ask —
@@ -23,9 +24,10 @@ public class ComponentAttributes {
      */
     private Map<String, Object> rest;
 
-    public ComponentAttributes(Map<String, Object> raw, Set<String> props) {
+    public ComponentAttributes(Map<String, Object> raw, Set<String> props, Map<String, String> appends) {
         this.raw = raw;
         this.props = props;
+        this.appends = appends;
     }
 
     public Object get(String name) {
@@ -50,5 +52,16 @@ public class ComponentAttributes {
         });
         rest = result;
         return result;
+    }
+
+    /**
+     * The caller's evaluated {@code th:classappend}/{@code th:styleappend} contributions, keyed by the
+     * target attribute they modify ({@code "class"}/{@code "style"}) — present only for the ones the
+     * caller actually supplied. Separate from {@link #rest()}: these aren't literal HTML attributes the
+     * caller passed, they're modifiers to be merged wherever the template puts {@code c:rest}, so they
+     * never appear as a plain {@code "classappend"}/{@code "styleappend"} key in {@code restAttributes}.
+     */
+    public Map<String, String> appends() {
+        return appends;
     }
 }

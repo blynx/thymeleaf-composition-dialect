@@ -1,0 +1,9 @@
+<!--
+  CASE      reserved-class-demo.html declares class as a prop, so a caller's plain class attribute is
+            excluded from c:rest like any other declared prop (see a-declared-prop-is-excluded-even-though-
+            its-read) — including from the base a th:classappend merge starts from. The template's own
+            th:classappend and the caller's own th:classappend both still merge normally; only the caller's
+            plain value never reaches the element.
+  EXPECT    class="base component urgent", "ignored" nowhere in the output
+-->
+<c:reserved-class-demo class="ignored" th:classappend="'urgent'">content</c:reserved-class-demo>

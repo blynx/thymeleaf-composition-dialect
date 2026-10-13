@@ -533,6 +533,44 @@ class CasesTest {
         }
 
         @Test
+        void anOuterThClassappendMergesWithTheComponentsOwn() {
+            String out = render("attributes/an-outer-th-classappend-merges-with-the-components-own");
+
+            assertTrue(out.contains("class=\"btn-danger urgent\""), out);
+        }
+
+        @Test
+        void anOuterThStyleappendMergesWithTheComponentsOwn() {
+            String out = render("attributes/an-outer-th-styleappend-merges-with-the-components-own");
+
+            assertTrue(out.contains("style=\"margin:0; color:red; font-weight:bold;\""), out);
+        }
+
+        @Test
+        void aDeclaredClassPropKeepsTheCallersPlainClassOutOfTheClassappendMerge() {
+            String out = render("attributes/a-declared-class-prop-keeps-the-callers-plain-class-out-of-the-classappend-merge");
+
+            assertTrue(out.contains("class=\"base component urgent\""), out);
+            assertFalse(out.contains("ignored"), out);
+        }
+
+        @Test
+        void anOuterThAttrappendOnAComponentTagFails() {
+            String message = failureOf("attributes/an-outer-th-attrappend-on-a-component-tag-fails");
+
+            assertTrue(message.contains("th:attrappend"), message);
+            assertTrue(message.contains("<c:attrappend-demo>"), message);
+        }
+
+        @Test
+        void anOuterThAttrprependOnAComponentTagFails() {
+            String message = failureOf("attributes/an-outer-th-attrprepend-on-a-component-tag-fails");
+
+            assertTrue(message.contains("th:attrprepend"), message);
+            assertTrue(message.contains("<c:attrprepend-demo>"), message);
+        }
+
+        @Test
         void cRestOutsideAComponentFails() {
             String message = failureOf("attributes/c-rest-outside-a-component-fails");
 

@@ -1,0 +1,10 @@
+<!--
+  CASE      styleappend-demo.html carries a plain style="margin:0;" of its own, and appends "color:red;"
+            onto that via th:styleappend, giving "margin:0; color:red;" already without any caller
+            involvement. th:styleappend on the call-site tag merges with both layers rather than
+            overwriting them: all three — the static style, the component's own append, and the caller's —
+            land in the final style in that order, each joined by a single space, the same separator
+            th:styleappend itself already uses.
+  EXPECT    style="margin:0; color:red; font-weight:bold;"
+-->
+<c:styleappend-demo th:styleappend="'font-weight:bold;'">content</c:styleappend-demo>

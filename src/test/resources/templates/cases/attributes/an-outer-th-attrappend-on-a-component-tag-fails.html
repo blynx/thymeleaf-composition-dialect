@@ -1,0 +1,9 @@
+<!--
+  CASE      Unlike th:classappend/th:styleappend, th:attrappend has no single fixed target attribute — its
+            value can name any attribute at all (even several at once), so there is nothing to anchor a
+            caller-side merge to. This is a deliberate, permanent decision, not a gap: the same effect is
+            already reachable by hand inside the template via restAttributes, e.g. reading
+            this.restAttributes['data-note'] and concatenating it there.
+  EXPECT    fails, naming the attribute and where to put it instead
+-->
+<c:attrappend-demo th:attrappend="data-note=${'-outer'}">content</c:attrappend-demo>
